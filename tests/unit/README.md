@@ -1,0 +1,8 @@
+- [ ] Create `tests/unit/sensors` for sensor logic tests
+- [ ] Add fake sensor implementations in `tests/fakes/`
+- [ ] Write tests for:
+  - sensor calibration
+  - bounds validation
+  - failure modes
+  - data fusion under noise
+- [ ] Add integration test for sensor manager with multiple simulated sensors

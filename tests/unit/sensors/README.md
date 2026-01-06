@@ -1,0 +1,5 @@
+- [ ] Add fake sensor base class
+- [ ] Implement fake wind/battery sensors
+- [ ] Test sensor manager with fakes
+- [ ] Validate sensor fusion and noise handling
+- [ ] Ensure failure propagation tests
