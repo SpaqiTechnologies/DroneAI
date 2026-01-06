@@ -65,11 +65,29 @@ class SensorManager:
         self._last_update = timestamp
         for sensor in self._sensors.values():
             try:
-                value = sensor.measure()
-                self._sensor_values[sensor.type] = value
+                if sensor.type == "ultrasonic":
+                    # Get distance reading and validate range
+                    dist_m = sensor.measure_distance()
+                    
+                    # Basic sanity checks
+                    if dist_m < 0.1 or dist_m > 25:  # typical ultra range
+                        raise SensorReadingInvalidException(
+                            f"Ultrasonic out of range: {dist_m:.2f}m"
+                        )
+                    
+                    # Signal quality check (example implementation)
+                    if sensor.signal_strength < 0.7:
+                        raise SensorSignalWeakException(
+                            f"Ultra signal weak ({sensor.signal_strength:.1f})"
+                        )
+                    
+                    self._sensor_values[sensor.type] = dist_m
+                else:
+                    value = sensor.measure()
+                    self._sensor_values[sensor.type] = value
             except Exception as e:
                 logger.warning(f"Sensor {sensor.type} update failed: {str(e)}")
-                # Keep last known good value by default behavior of _sensor_values
+            # Keep last known good value by default behavior of _sensor_values
 
     def get(self, sensor_type: str) -> Optional[object]:
         """Get the latest measured value for a sensor type."""

@@ -17,13 +17,9 @@ class Drone:
 
     def __init__(self):
         self.sensor_manager = SensorManager()
-        self.wind_sensor = WindSensor()
-        self.battery_sensor = BatterySensor()
         self.current_position = (0.0, 0.0)  # (latitude, longitude)
         self.home_position = (0.0, 0.0)  # (latitude, longitude)
         self.battery_level = 100.0  # Percentage
-        self.wind_speed = 0.0  # m/s
-        self.wind_direction = 0.0  # degrees
         self._battery_level_override = None  # For testing purposes
 
     def update_sensors(self):
@@ -120,14 +116,23 @@ class Drone:
         # Base path is direct to home
         waypoints = [self.home_position]
 
-        # Adjust path based on wind conditions
+        # Add ultrasonic obstacle checks globally
+        home_to_current = self._calculate_distance(
+            self.home_position, self.current_position
+        )
+        
+        # Safety: if ultrasonic is valid and distance < min_clearance, trigger avoidance
+        ultra_dist_m = self.sensor_manager.get("ultrasonic").get_distance()
+        if not math.isnan(ultra_dist_m) and ultra_dist_m < 1.5:  # 1.5m clearance
+            waypoints = self._add_obstacle_avoid_waypoint(
+                waypoints, self.current_position, ultra_dist_m
+            )
+
+        # Keep existing wind/battery behavior
         if self.wind_speed > 10:  # High wind condition
-            # Add detour to avoid strong wind
             waypoints = self._add_wind_detour(waypoints)
 
-        # Adjust path based on battery level
-        if self.battery_level < 20:  # Low battery
-            # Shorten path to conserve battery
+        if self.battery_level < 20:
             waypoints = self._reduce_path_for_battery(waypoints)
 
         return waypoints
