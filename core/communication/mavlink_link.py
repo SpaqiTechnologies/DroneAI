@@ -116,6 +116,10 @@ class MAVLinkLink:
         except Exception:
             # Serial/TCP endpoints may not be writable yet; tolerate it.
             pass
+        # Defensive ConnectionResetError handling lives in wait_heartbeat()
+        # and the RX loop — those cover the Windows "ICMP port unreachable
+        # turns into WSAECONNRESET on next recvfrom" case without needing
+        # the SIO_UDP_CONNRESET ioctl (which CPython's socket.ioctl rejects).
         self._running = True
         self._rx_thread = threading.Thread(
             target=self._rx_loop, name="mavlink-rx", daemon=True
@@ -152,7 +156,13 @@ class MAVLinkLink:
         """
         if self._conn is None:
             raise RuntimeError("not connected")
-        msg = self._conn.wait_heartbeat(timeout=timeout)
+        try:
+            msg = self._conn.wait_heartbeat(timeout=timeout)
+        except (ConnectionResetError, OSError):
+            # Belt-and-braces: even with SIO_UDP_CONNRESET cleared, some
+            # Windows configurations still surface socket errors here.
+            # Treat as no-peer.
+            return None
         if msg is None:
             return None
         with self._lock:
