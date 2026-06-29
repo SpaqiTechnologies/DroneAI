@@ -3985,6 +3985,13 @@
             }
         });
 
+        // Welcome line so the user can see the event log is alive even
+        // before they click anything. If the log stays empty after this,
+        // something is genuinely broken with addLogEntry or the panel.
+        try {
+            addLogEntry('Dashboard ready — click Start to begin', 'info');
+        } catch (e) { console.error('addLogEntry failed:', e); }
+
         // Sync button state from the server on page load. If a previous
         // session left the simulation running, the dashboard now shows
         // that immediately instead of letting the user click Start to no effect.
