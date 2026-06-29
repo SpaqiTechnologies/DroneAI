@@ -5,15 +5,40 @@ Handles wind speed and direction data collection.
 
 import random
 
+from .sensor import Sensor
 
-class WindSensor:
+
+class WindSensor(Sensor):
     """
     Simulates wind sensor data collection.
     """
 
     def __init__(self):
+        self.type = "wind"
         self.wind_speed = 0.0  # m/s
         self.wind_direction = 0.0  # degrees
+
+    def start(self):
+        """Start the sensor."""
+        pass
+
+    def stop(self):
+        """Stop the sensor."""
+        pass
+
+    def update(self):
+        """Fetch latest measurement."""
+        self.wind_speed = random.uniform(0, 20)
+        self.wind_direction = random.uniform(0, 360)
+        return {'speed': self.wind_speed, 'direction': self.wind_direction}
+
+    def measure(self):
+        """Alias for update() to match sensor interface."""
+        return self.update()
+
+    def is_valid(self):
+        """True if last reading is valid."""
+        return self.wind_speed >= 0 and 0 <= self.wind_direction <= 360
 
     def get_wind_speed(self) -> float:
         """Get current wind speed in m/s."""

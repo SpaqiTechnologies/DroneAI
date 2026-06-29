@@ -1,4 +1,5 @@
 pytest
+httpx>=0.27  # required by fastapi.testclient
 numpy
 
 # Web simulation dashboard (Flask - legacy)

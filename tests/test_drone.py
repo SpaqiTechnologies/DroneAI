@@ -17,22 +17,25 @@ class TestDrone(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures before each test method."""
-        self.drone = Drone()
+        self.drone = Drone(enable_logging=False)  # Disable logging for tests
         self.drone.set_home_position(52.52, 13.405)  # Berlin coordinates
         self.drone.set_current_position(52.53, 13.415)  # Near Berlin
+        # Also set GPS sensor position to match
+        self.drone.gps_sensor.set_position(52.53, 13.415)
 
     def test_normal_path_planning(self):
         """Test normal path planning with good conditions."""
-        # Set normal wind and battery levels
-        self.drone.wind_sensor.set_wind_speed(5.0)
-        self.drone.battery_sensor.set_battery_level(80.0)
+        # Use mocking to set wind and battery levels to avoid random values
+        with patch.object(self.drone.wind_sensor, "get_wind_speed", return_value=5.0):
+            with patch.object(
+                self.drone.battery_sensor, "get_battery_level", return_value=80.0
+            ):
+                # Calculate return path
+                path = self.drone.calculate_return_to_home()
 
-        # Calculate return path
-        path = self.drone.calculate_return_to_home()
-
-        # Should return a path (list of waypoints)
-        self.assertIsInstance(path, list)
-        self.assertGreater(len(path), 0)
+                # Should return a path (list of waypoints)
+                self.assertIsInstance(path, list)
+                self.assertGreater(len(path), 0)
 
     def test_high_wind_conditions(self):
         """Test path planning with high wind conditions."""
@@ -50,8 +53,8 @@ class TestDrone(unittest.TestCase):
 
     def test_low_battery_conditions(self):
         """Test path planning with low battery conditions."""
-        # Set low battery level
-        self.drone.battery_sensor.set_battery_level(5.0)
+        # Set low battery level using override
+        self.drone.set_battery_level_override(5.0)
         self.drone.wind_sensor.set_wind_speed(5.0)
 
         # Should raise LowBatteryException
@@ -71,6 +74,7 @@ class TestDrone(unittest.TestCase):
         """Test path planning with simulated GPS drift."""
         # Set up a scenario with GPS drift (different positions)
         self.drone.set_current_position(52.525, 13.410)  # Slightly different position
+        self.drone.gps_sensor.set_position(52.525, 13.410)  # Match GPS sensor
         # Use mocking to set wind and battery levels
         with patch.object(self.drone.wind_sensor, "get_wind_speed", return_value=5.0):
             with patch.object(

@@ -3,16 +3,27 @@ Sensor manager for Drone AI application.
 Manages all sensor connections and data collection.
 """
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 import logging
 
-from . import battery_sensor, wind_sensor, ultrasonic_sensor
-
-# Import Drone class for type hints (optional)
-from core.drone import Drone
+from . import battery_sensor, wind_sensor, ultrasonic_sensor, imu_sensor
 from .sensor import Sensor
 
+# Use TYPE_CHECKING to avoid circular imports
+if TYPE_CHECKING:
+    from core.drone import Drone
+
 logger = logging.getLogger(__name__)
+
+
+class SensorReadingInvalidException(Exception):
+    """Exception raised when sensor reading is invalid."""
+    pass
+
+
+class SensorSignalWeakException(Exception):
+    """Exception raised when sensor signal is weak."""
+    pass
 
 
 class SensorManager:
@@ -30,6 +41,7 @@ class SensorManager:
         self.register_sensor(battery_sensor.BatterySensor())
         self.register_sensor(wind_sensor.WindSensor())
         self.register_sensor(ultrasonic_sensor.UltrasonicSensor())
+        self.register_sensor(imu_sensor.IMUSensor())
 
     def register_sensor(self, sensor: Sensor):
         """Register a sensor by its type."""
@@ -68,20 +80,27 @@ class SensorManager:
                 if sensor.type == "ultrasonic":
                     # Get distance reading and validate range
                     dist_m = sensor.measure_distance()
-                    
+
                     # Basic sanity checks
                     if dist_m < 0.1 or dist_m > 25:  # typical ultra range
                         raise SensorReadingInvalidException(
                             f"Ultrasonic out of range: {dist_m:.2f}m"
                         )
-                    
+
                     # Signal quality check (example implementation)
                     if sensor.signal_strength < 0.7:
                         raise SensorSignalWeakException(
                             f"Ultra signal weak ({sensor.signal_strength:.1f})"
                         )
-                    
+
                     self._sensor_values[sensor.type] = dist_m
+                elif sensor.type == "imu":
+                    # Get IMU reading
+                    reading = sensor.update()
+                    if reading.is_valid():
+                        self._sensor_values[sensor.type] = reading
+                    else:
+                        raise SensorReadingInvalidException("IMU reading invalid")
                 else:
                     value = sensor.measure()
                     self._sensor_values[sensor.type] = value
@@ -114,3 +133,16 @@ class SensorManager:
     def reset(self):
         """Reset sensor values (not hardware)."""
         self._sensor_values.clear()
+
+    def check_sensor_connection(self) -> bool:
+        """Check if all sensors are connected and responding."""
+        # For simulation, always return True unless explicitly set otherwise
+        return getattr(self, '_connection_ok', True)
+
+    def simulate_sensor_failure(self):
+        """Simulate sensor connection failure for testing."""
+        self._connection_ok = False
+
+    def restore_sensor_connection(self):
+        """Restore sensor connection for testing."""
+        self._connection_ok = True

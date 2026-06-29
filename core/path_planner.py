@@ -62,7 +62,6 @@ class PathPlanner:
 
     BASE_CONSUMPTION_PER_KM = 1.0  # % per km at zero wind
     WIND_FACTOR = 0.05            # additional % per m/s of wind
-    MAX_WAYPOINTS = 20            # safety limit to avoid infinite loops
 
     def __init__(self, step_km: float = 0.5):
         self.step_km = step_km
@@ -83,34 +82,29 @@ class PathPlanner:
         distance = haversine(current, home)
         energy_needed = self._energy_needed(distance, state.wind_speed_m_s)
 
-        if state.battery_percent < energy_needed:
-            # Try to insert intermediate waypoints until we fit the budget
-            steps = max(1, int(math.ceil(distance / self.step_km)))
-            if steps > self.MAX_WAYPOINTS:
-                raise ValueError("Too many waypoints required for return path")
-            waypoint_distance = distance / steps
-            # Linear interpolation between current and home
-            waypoints: List[Position] = []
-            for i in range(1, steps + 1):
-                frac = i / steps
-                lat = current.latitude + (home.latitude - current.latitude) * frac
-                lon = current.longitude + (home.longitude - current.longitude) * frac
-                alt = current.altitude + (home.altitude - current.altitude) * frac
-                wp = Position(lat, lon, alt)
-                waypoints.append(wp)
-            # Verify final segment fits battery budget
-            total_energy = 0.0
-            prev = current
-            for wp in waypoints:
-                seg_dist = haversine(prev, wp)
-                total_energy += self._energy_needed(seg_dist, state.wind_speed_m_s)
-                prev = wp
-            if total_energy > state.battery_percent:
-                raise ValueError("Battery insufficient even with intermediate waypoints")
-            return waypoints
-        else:
+        if state.battery_percent >= energy_needed:
             # Straight line is fine
             return [home]
+
+        # Strategy: Try low-altitude return
+        # If direct path fails, assume wind is lower at a safe minimum altitude (e.g. 20m).
+        # We model this as a 50% reduction in wind speed.
+        SAFE_ALTITUDE = 20.0
+        optimized_wind = state.wind_speed_m_s * 0.5
+        
+        # Calculate energy for the cruise segment plus a fixed overhead for descent/ascent
+        # (Heuristic: overhead equivalent to 0.5 km of flight)
+        cruise_energy = self._energy_needed(distance, optimized_wind)
+        overhead_energy = self._energy_needed(0.5, 0.0)
+        
+        if state.battery_percent >= (cruise_energy + overhead_energy):
+            return [
+                Position(current.latitude, current.longitude, SAFE_ALTITUDE), # Descend
+                Position(home.latitude, home.longitude, SAFE_ALTITUDE),       # Cruise
+                home                                                          # Land/Home
+            ]
+
+        raise ValueError("Battery insufficient even with optimized low-altitude path")
 
 # ---------------------------------------------------------------------------
 # Example usage (not executed in tests)
@@ -127,4 +121,3 @@ if __name__ == "__main__":
             print(wp)
     except ValueError as e:
         print(e)
-"""

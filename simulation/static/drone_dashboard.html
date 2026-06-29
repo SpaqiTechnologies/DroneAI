@@ -1,0 +1,1171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Drone AI Dashboard</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --panel: #161b25;
+    --line: #232a36;
+    --line2: #2c3445;
+    --accent: #7cc4ff;
+    --green: #5fd07c;
+    --yellow: #f3c860;
+    --red: #ef6f6f;
+    --muted: #8b94a6;
+    --text: #e6ebf2;
+    --mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { background: var(--bg); color: var(--text); margin: 0; font: 13px/1.4 -apple-system, Segoe UI, sans-serif; }
+  header { padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; }
+  header h1 { font-size: 14px; margin: 0; letter-spacing: 0.5px; }
+  .pill { font-family: var(--mono); font-size: 11px; padding: 3px 8px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); color: var(--muted); }
+  .pill a { color: inherit; text-decoration: none; }
+  nav.tabs { display: flex; gap: 2px; padding: 0 12px; border-bottom: 1px solid var(--line); background: #11141c; overflow-x: auto; }
+  nav.tabs button {
+    background: transparent; border: none; color: var(--muted);
+    padding: 10px 14px; cursor: pointer; font: inherit;
+    border-bottom: 2px solid transparent; white-space: nowrap;
+  }
+  nav.tabs button:hover { color: var(--text); }
+  nav.tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  main { padding: 12px; min-height: calc(100vh - 95px); }
+  .tab-content { display: none; }
+  .tab-content.active { display: grid; gap: 12px; }
+  .cols-3 { grid-template-columns: 1.3fr 1fr 1fr; }
+  .cols-2 { grid-template-columns: 1fr 1fr; }
+  .cols-1 { grid-template-columns: 1fr; }
+  @media (max-width: 1100px) { .cols-3, .cols-2 { grid-template-columns: 1fr; } }
+
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; min-width: 0; }
+  .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); margin: 0 0 8px; }
+  .panel h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); margin: 12px 0 6px; }
+  .stack { display: flex; flex-direction: column; gap: 8px; }
+  .row { display: flex; justify-content: space-between; gap: 8px; }
+  .row .k { color: var(--muted); }
+  .row .v { font-family: var(--mono); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+
+  #feed { background: #000; border-radius: 4px; image-rendering: pixelated; width: 100%; object-fit: contain; max-height: 360px; }
+  button {
+    background: var(--panel); border: 1px solid var(--line2); border-radius: 4px;
+    color: var(--text); padding: 6px 10px; cursor: pointer; font: inherit;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .controls { display: flex; flex-wrap: wrap; gap: 6px; }
+  .state-pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-family: var(--mono); font-size: 11px; }
+  .state-ready, .state-completed, .state-docked { background: rgba(95, 208, 124, 0.15); color: var(--green); }
+  .state-deployed, .state-capturing, .state-investigating, .state-running, .state-searching { background: rgba(124, 196, 255, 0.15); color: var(--accent); }
+  .state-charging, .state-warning, .state-cooldown, .state-pending { background: rgba(243, 200, 96, 0.15); color: var(--yellow); }
+  .state-recalling, .state-aborted, .state-failed, .state-error, .state-critical, .state-emergency { background: rgba(239, 111, 111, 0.15); color: var(--red); }
+  .scan-grid { display: grid; gap: 3px; padding: 4px; }
+  .scan-cell { aspect-ratio: 1; background: #1d2330; border-radius: 2px; display: flex; align-items: center; justify-content: center; font: 10px var(--mono); color: var(--muted); }
+  pre, .log {
+    background: #0c1018; border-radius: 4px; padding: 6px;
+    max-height: 220px; overflow: auto;
+    font: 11px var(--mono); color: var(--muted);
+    margin: 0;
+  }
+  .log p { margin: 0 0 2px; word-break: break-word; }
+  .log .ts { color: #58606e; }
+  .progress { background: #0c1018; border-radius: 4px; overflow: hidden; height: 6px; border: 1px solid var(--line); }
+  .progress > div { height: 100%; background: var(--accent); transition: width 0.3s; }
+  input[type=text], input[type=number], select, textarea {
+    background: #0c1018; border: 1px solid var(--line2); color: var(--text);
+    border-radius: 4px; padding: 5px 8px; font: inherit; width: 100%;
+  }
+  textarea { font: 11px var(--mono); resize: vertical; min-height: 60px; }
+  label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 3px; }
+  details summary { cursor: pointer; color: var(--muted); user-select: none; margin-bottom: 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table th, table td { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  table th { color: var(--muted); font-weight: normal; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; }
+  table td.v { font-family: var(--mono); }
+  .empty { color: var(--muted); padding: 10px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛩 Drone AI Dashboard</h1>
+  <span class="pill" id="conn-pill">connecting…</span>
+  <span class="pill" id="clock-pill">--:--:--</span>
+  <span style="flex: 1"></span>
+  <span class="pill"><a href="/docs">/docs ↗</a></span>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button data-tab="overview" class="active">🛩 Overview</button>
+  <button data-tab="sar">🚨 Search &amp; Rescue</button>
+  <button data-tab="survival">🆘 Survival</button>
+  <button data-tab="media">🎬 Media</button>
+  <button data-tab="scan">🏗 Scan &amp; Inspect</button>
+  <button data-tab="system">⚙ System</button>
+</nav>
+
+<main>
+  <!-- ============================ OVERVIEW ============================ -->
+  <!-- The "live cockpit" — everything you watch continuously sits here.
+       Use the tabs above only to drill into specialized tooling. -->
+  <section class="tab-content cols-3 active" data-tab="overview">
+    <div class="panel">
+      <h2>Live camera</h2>
+      <img id="feed" alt="live feed">
+      <div class="controls" style="margin-top: 10px">
+        <button onclick="snap()">📷 Snapshot</button>
+        <button id="rec-btn" onclick="toggleRec()">⏺ Start recording</button>
+        <button onclick="openTab('media')">🎬 More…</button>
+      </div>
+      <details style="margin-top: 10px" open>
+        <summary>Telemetry</summary>
+        <div id="telemetry" class="stack" style="margin-top: 6px"></div>
+      </details>
+      <details style="margin-top: 10px">
+        <summary>Quick LLM mission</summary>
+        <div style="margin-top: 6px">
+          <input type="text" id="llm-cmd-quick" placeholder='"survey the area here"' style="margin-bottom: 6px">
+          <div class="controls">
+            <button onclick="llmPlanQuick()">🧠 Plan</button>
+            <button onclick="openTab('media')">More…</button>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <div class="panel">
+      <h2>Docking station</h2>
+      <div class="stack">
+        <div class="row"><span class="k">state</span><span class="v" id="dock-state">—</span></div>
+        <div class="row"><span class="k">battery</span><span class="v" id="dock-battery">—</span></div>
+        <div class="progress"><div id="dock-battery-bar" style="width: 0%"></div></div>
+        <div class="row"><span class="k">at dock</span><span class="v" id="dock-atpad">—</span></div>
+        <div class="row"><span class="k">deploy / done / abort</span>
+          <span class="v" id="dock-counters">—</span></div>
+      </div>
+      <div class="controls" style="margin-top: 10px">
+        <button onclick="setupDock()">⚙ Setup dock</button>
+        <button onclick="dockDeploy()">🚁 Deploy</button>
+        <button onclick="dockRecall()">↩ Recall</button>
+      </div>
+
+      <h3>Autonomy runtime</h3>
+      <div class="stack">
+        <div class="row"><span class="k">last phase</span><span class="v" id="auto-phase">—</span></div>
+        <div class="row"><span class="k">last tick count</span><span class="v" id="auto-ticks">—</span></div>
+      </div>
+
+      <h3>Patrols</h3>
+      <div id="patrol-list" class="stack"></div>
+      <div class="controls" style="margin-top: 6px">
+        <input type="text" id="patrol-name" placeholder="patrol name" style="flex: 1; min-width: 100px">
+        <input type="number" id="patrol-period" placeholder="period s" value="30" style="width: 90px">
+        <button onclick="addPatrol()">+</button>
+      </div>
+
+      <h3>SAR mission (compact)</h3>
+      <div class="stack">
+        <div class="row"><span class="k">state</span><span class="v" id="sar-state-overview">—</span></div>
+        <div class="row"><span class="k">progress / targets</span><span class="v" id="sar-counts-overview">—</span></div>
+      </div>
+      <div class="controls" style="margin-top: 6px">
+        <button onclick="openTab('sar')">🚨 SAR controls →</button>
+      </div>
+
+      <h3>Anomalies</h3>
+      <div class="stack">
+        <div class="row"><span class="k">forwarded to failsafe</span><span class="v" id="anomaly-count-overview">0</span></div>
+        <div class="row"><span class="k">most recent</span><span class="v" id="anomaly-last-overview">—</span></div>
+      </div>
+      <div class="controls" style="margin-top: 6px">
+        <button onclick="openTab('system')">⚙ System →</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Adaptive 3D scan</h2>
+      <div class="stack">
+        <div class="row"><span class="k">scan id</span><span class="v" data-scan="id">—</span></div>
+        <div class="row"><span class="k">state</span><span class="v" data-scan="state">—</span></div>
+        <div class="row"><span class="k">captured / planned</span><span class="v" data-scan="count">—</span></div>
+        <div class="row"><span class="k">overall coverage</span><span class="v" data-scan="coverage">—</span></div>
+        <div class="row"><span class="k">refinement waypoints</span><span class="v" data-scan="refine">—</span></div>
+        <div data-scan="grid" class="scan-grid"></div>
+      </div>
+      <div class="controls" style="margin-top: 8px">
+        <button onclick="planScanQuick()">🎯 Plan</button>
+        <button onclick="captureScan()">📸 Capture next</button>
+        <button onclick="captureAll()">⏩ Capture all</button>
+        <button onclick="openTab('scan')">→ Tune…</button>
+      </div>
+
+      <h2 style="margin-top: 14px">Event log</h2>
+      <div id="log" class="log" style="flex: 1; max-height: 260px"></div>
+    </div>
+  </section>
+
+  <!-- ============================ SAR ============================ -->
+  <section class="tab-content cols-2" data-tab="sar">
+    <div class="panel">
+      <h2>Single-drone SAR mission</h2>
+      <label>Center latitude</label>
+      <input type="number" id="sar-lat" value="47.5" step="0.0001">
+      <label style="margin-top:6px">Center longitude</label>
+      <input type="number" id="sar-lon" value="-122.3" step="0.0001">
+      <div class="grid2" style="margin-top:6px">
+        <div><label>Pattern</label>
+          <select id="sar-pattern">
+            <option value="expanding_square">expanding_square</option>
+            <option value="sector">sector</option>
+            <option value="parallel">parallel</option>
+            <option value="creeping_line">creeping_line</option>
+            <option value="spiral">spiral</option>
+            <option value="grid">grid</option>
+          </select>
+        </div>
+        <div><label>Altitude (m)</label><input type="number" id="sar-alt" value="30"></div>
+        <div><label>Spacing (m)</label><input type="number" id="sar-spacing" value="40"></div>
+        <div><label>Speed (m/s)</label><input type="number" id="sar-speed" value="8"></div>
+        <div><label>Legs</label><input type="number" id="sar-legs" value="6"></div>
+        <div><label>Radius (m)</label><input type="number" id="sar-radius" value="500"></div>
+      </div>
+      <div class="controls" style="margin-top:8px">
+        <button onclick="sarPlan()">🗺 Plan</button>
+        <button onclick="sarRun()">▶ Run</button>
+      </div>
+
+      <h3>Active SAR report</h3>
+      <div class="stack">
+        <div class="row"><span class="k">mission id</span><span class="v" id="sar-id">—</span></div>
+        <div class="row"><span class="k">state</span><span class="v" id="sar-state">—</span></div>
+        <div class="row"><span class="k">progress</span><span class="v" id="sar-progress">—</span></div>
+        <div class="row"><span class="k">targets / photos</span><span class="v" id="sar-counts">—</span></div>
+        <div class="row"><span class="k">investigations</span><span class="v" id="sar-invest">—</span></div>
+      </div>
+      <h3>Targets</h3>
+      <table id="sar-targets"><thead><tr><th>type</th><th>conf</th><th>lat,lon</th><th>investigated</th></tr></thead><tbody></tbody></table>
+    </div>
+
+    <div class="panel">
+      <h2>Swarm SAR (N drones)</h2>
+      <div class="grid2">
+        <div><label>Drones</label><input type="number" id="swarm-n" value="3" min="2" max="20"></div>
+        <div><label>Radius (m)</label><input type="number" id="swarm-radius" value="200"></div>
+        <div><label>Pattern</label>
+          <select id="swarm-pattern">
+            <option value="sector">sector</option>
+            <option value="parallel">parallel</option>
+            <option value="expanding_square">expanding_square</option>
+          </select>
+        </div>
+        <div><label>Speed (m/s)</label><input type="number" id="swarm-speed" value="10"></div>
+      </div>
+      <div class="controls" style="margin-top:8px">
+        <button onclick="swarmRun()">▶ Run swarm sweep</button>
+      </div>
+
+      <h3>Swarm report</h3>
+      <div class="stack">
+        <div class="row"><span class="k">swarm id</span><span class="v" id="swarm-id">—</span></div>
+        <div class="row"><span class="k">completed / drones</span><span class="v" id="swarm-counts">—</span></div>
+        <div class="row"><span class="k">aggregated targets</span><span class="v" id="swarm-targets">—</span></div>
+        <div class="row"><span class="k">duration</span><span class="v" id="swarm-duration">—</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ SURVIVAL ============================ -->
+  <section class="tab-content cols-3" data-tab="survival">
+    <div class="panel">
+      <h2>📡 Emergency beacon locator</h2>
+      <p style="color:var(--muted);font-size:12px;margin:0 0 8px">
+        Add RSSI samples as the drone moves; we trilaterate the beacon position.
+      </p>
+      <div class="grid2">
+        <div><label>Latitude</label><input type="number" id="bc-lat" value="47.5000" step="0.00001"></div>
+        <div><label>Longitude</label><input type="number" id="bc-lon" value="-122.3000" step="0.00001"></div>
+        <div><label>Altitude (m)</label><input type="number" id="bc-alt" value="20"></div>
+        <div><label>RSSI (dBm)</label><input type="number" id="bc-rssi" value="-65"></div>
+      </div>
+      <div class="controls" style="margin-top:8px">
+        <button onclick="bcSample()">+ Add sample</button>
+        <button onclick="bcReset()">Reset</button>
+        <button onclick="bcFix()">📍 Compute fix</button>
+      </div>
+      <h3>Current fix</h3>
+      <div class="stack">
+        <div class="row"><span class="k">samples</span><span class="v" id="bc-samples">0</span></div>
+        <div class="row"><span class="k">lat / lon</span><span class="v" id="bc-pos">—</span></div>
+        <div class="row"><span class="k">method</span><span class="v" id="bc-method">—</span></div>
+        <div class="row"><span class="k">confidence</span><span class="v" id="bc-conf">—</span></div>
+        <div class="row"><span class="k">residual</span><span class="v" id="bc-res">—</span></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>🪂 Supply drop planner</h2>
+      <div class="grid2">
+        <div><label>Target lat</label><input type="number" id="sd-lat" value="47.5005" step="0.00001"></div>
+        <div><label>Target lon</label><input type="number" id="sd-lon" value="-122.3005" step="0.00001"></div>
+        <div><label>Wind speed (m/s)</label><input type="number" id="sd-wspd" value="6"></div>
+        <div><label>Wind from (deg)</label><input type="number" id="sd-wdir" value="270"></div>
+        <div><label>Release alt (m)</label><input type="number" id="sd-alt" value="40"></div>
+        <div><label>Release speed (m/s)</label><input type="number" id="sd-speed" value="10"></div>
+        <div><label>Parachute at (m)</label><input type="number" id="sd-chute" value="15"></div>
+      </div>
+      <div class="controls" style="margin-top:8px">
+        <button onclick="sdPlan()">📐 Compute release point</button>
+      </div>
+      <h3>Plan</h3>
+      <div class="stack">
+        <div class="row"><span class="k">release lat,lon</span><span class="v" id="sd-rpos">—</span></div>
+        <div class="row"><span class="k">heading</span><span class="v" id="sd-heading">—</span></div>
+        <div class="row"><span class="k">fall time</span><span class="v" id="sd-falltime">—</span></div>
+        <div class="row"><span class="k">drift</span><span class="v" id="sd-drift">—</span></div>
+        <div class="row"><span class="k">impact radius</span><span class="v" id="sd-radius">—</span></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>🛤 Safe corridor planner</h2>
+      <div class="grid2">
+        <div><label>Start lat</label><input type="number" id="sc-slat" value="47.5000" step="0.00001"></div>
+        <div><label>Start lon</label><input type="number" id="sc-slon" value="-122.3000" step="0.00001"></div>
+        <div><label>Goal lat</label><input type="number" id="sc-glat" value="47.5100" step="0.00001"></div>
+        <div><label>Goal lon</label><input type="number" id="sc-glon" value="-122.3000" step="0.00001"></div>
+      </div>
+      <label style="margin-top:6px">Threat zones (one per line: lat,lon,radius_m,name)</label>
+      <textarea id="sc-threats">47.5050,-122.3000,120,checkpoint</textarea>
+      <div class="grid2" style="margin-top:6px">
+        <div><label>Safety margin (m)</label><input type="number" id="sc-margin" value="25"></div>
+        <div style="display:flex;align-items:flex-end"><button onclick="scPlan()" style="flex:1">🛡 Plan corridor</button></div>
+      </div>
+      <h3>Corridor</h3>
+      <div class="stack">
+        <div class="row"><span class="k">safe</span><span class="v" id="sc-safe">—</span></div>
+        <div class="row"><span class="k">length</span><span class="v" id="sc-len">—</span></div>
+        <div class="row"><span class="k">waypoints</span><span class="v" id="sc-wps">—</span></div>
+        <div class="row"><span class="k">min threat distance</span><span class="v" id="sc-mind">—</span></div>
+        <div class="row"><span class="k">failure</span><span class="v" id="sc-fail">—</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ MEDIA ============================ -->
+  <section class="tab-content cols-2" data-tab="media">
+    <div class="panel">
+      <h2>Live feed &amp; quick capture</h2>
+      <img id="feed2" alt="live feed" style="background:#000;border-radius:4px;image-rendering:pixelated;width:100%;max-height:300px;object-fit:contain">
+      <div class="controls" style="margin-top:8px">
+        <button onclick="snap()">📷 Snapshot</button>
+        <button id="rec-btn2" onclick="toggleRec()">⏺ Start recording</button>
+      </div>
+      <h3>Saved media</h3>
+      <div class="stack">
+        <div class="row"><span class="k">photos</span><span class="v" id="media-photos">—</span></div>
+        <div class="row"><span class="k">videos</span><span class="v" id="media-videos">—</span></div>
+        <div class="row"><span class="k">total bytes</span><span class="v" id="media-bytes">—</span></div>
+        <div class="row"><span class="k">storage root</span><span class="v" id="media-root" style="word-break:break-all">—</span></div>
+      </div>
+      <h3>Latest videos</h3>
+      <div id="media-video-list" class="stack"></div>
+    </div>
+
+    <div class="panel">
+      <h2>🎬 AI highlight reel</h2>
+      <p style="color:var(--muted);font-size:12px;margin:0 0 8px">
+        Builds a highlight reel manifest from a recording bundle (the .dvr directory) + a list of events.
+      </p>
+      <label>Recording bundle path</label>
+      <input type="text" id="hl-bundle" placeholder="C:\…\.dvr">
+      <label style="margin-top:6px">Events (one per line: ts,kind,label,importance,confidence)</label>
+      <textarea id="hl-events" placeholder="1234567890.0,target,person,1.0,0.95"></textarea>
+      <div class="controls" style="margin-top:8px">
+        <button onclick="hlBuild()">🎞 Build reel</button>
+        <button onclick="hlAutoFill()">Use latest video bundle</button>
+      </div>
+      <h3>Reel</h3>
+      <div class="stack">
+        <div class="row"><span class="k">reel id</span><span class="v" id="hl-id">—</span></div>
+        <div class="row"><span class="k">clips</span><span class="v" id="hl-clips">—</span></div>
+        <div class="row"><span class="k">total duration</span><span class="v" id="hl-duration">—</span></div>
+      </div>
+      <h3>Clips</h3>
+      <table id="hl-table"><thead><tr><th>id</th><th>duration</th><th>score</th><th>events</th></tr></thead><tbody></tbody></table>
+    </div>
+
+    <div class="panel" style="grid-column: 1 / -1">
+      <h2>🧠 LLM mission planner</h2>
+      <p style="color:var(--muted);font-size:12px;margin:0 0 8px">
+        Natural language → drone command. Survey/orbit/multi-waypoint commands materialize into a real Mission you can load.
+      </p>
+      <label>Command</label>
+      <input type="text" id="llm-cmd" placeholder='e.g. "survey the area here" or "fly to 47.5, -122.3"'>
+      <div class="controls" style="margin-top:8px">
+        <button onclick="llmPlan()">🗺 Plan only</button>
+        <button onclick="llmLoad()">💾 Plan + load into MissionManager</button>
+      </div>
+      <h3>Result</h3>
+      <pre id="llm-result">(no plan yet)</pre>
+    </div>
+  </section>
+
+  <!-- ============================ SCAN & INSPECT ============================ -->
+  <section class="tab-content cols-2" data-tab="scan">
+    <div class="panel">
+      <h2>🏗 Adaptive 3D scan</h2>
+      <div class="grid2">
+        <div><label>Center lat</label><input type="number" id="scn-lat" value="47.5" step="0.0001"></div>
+        <div><label>Center lon</label><input type="number" id="scn-lon" value="-122.3" step="0.0001"></div>
+        <div><label>Target height (m)</label><input type="number" id="scn-h" value="30"></div>
+        <div><label>Target radius (m)</label><input type="number" id="scn-r" value="5"></div>
+        <div><label>Shells</label><input type="number" id="scn-shells" value="3" min="1" max="10"></div>
+        <div><label>Bins/shell</label><input type="number" id="scn-bins" value="8" min="4" max="72"></div>
+        <div><label>Standoff (m)</label><input type="number" id="scn-stand" value="12"></div>
+        <div><label>Coverage target</label><input type="number" id="scn-target" value="0.85" step="0.05" min="0.1" max="1"></div>
+      </div>
+      <div class="controls" style="margin-top:8px">
+        <button onclick="planScan()">🎯 Plan</button>
+        <button onclick="captureScan()">📸 Capture next</button>
+        <button onclick="captureAll()">⏩ Capture all</button>
+      </div>
+      <h3>Scan report</h3>
+      <div class="stack">
+        <div class="row"><span class="k">scan id</span><span class="v" data-scan="id">—</span></div>
+        <div class="row"><span class="k">state</span><span class="v" data-scan="state">—</span></div>
+        <div class="row"><span class="k">captured / planned</span><span class="v" data-scan="count">—</span></div>
+        <div class="row"><span class="k">overall coverage</span><span class="v" data-scan="coverage">—</span></div>
+        <div class="row"><span class="k">refinement waypoints</span><span class="v" data-scan="refine">—</span></div>
+      </div>
+      <h3>Coverage heatmap</h3>
+      <div data-scan="grid" class="scan-grid"></div>
+    </div>
+
+    <div class="panel">
+      <h2>📋 Inspection report</h2>
+      <p style="color:var(--muted);font-size:12px;margin:0 0 8px">
+        Generates a JSON + Markdown report from the active Inspector instance (defects, waypoints, media).
+      </p>
+      <label>Asset name</label>
+      <input type="text" id="ins-asset" value="Tower-7">
+      <label style="margin-top:6px">Operator ID (optional)</label>
+      <input type="text" id="ins-operator" value="op-1">
+      <label style="margin-top:6px">Output directory (optional, server-side path)</label>
+      <input type="text" id="ins-out" placeholder="(in-memory only if blank)">
+      <div class="controls" style="margin-top:8px">
+        <button onclick="insReport()">🧾 Generate report</button>
+      </div>
+      <h3>Report summary</h3>
+      <div class="stack">
+        <div class="row"><span class="k">report id</span><span class="v" id="ins-id">—</span></div>
+        <div class="row"><span class="k">defect count</span><span class="v" id="ins-defects">—</span></div>
+        <div class="row"><span class="k">highest severity</span><span class="v" id="ins-sev">—</span></div>
+        <div class="row"><span class="k">actionable</span><span class="v" id="ins-action">—</span></div>
+        <div class="row"><span class="k">json path</span><span class="v" id="ins-json" style="word-break:break-all">—</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ SYSTEM ============================ -->
+  <section class="tab-content cols-2" data-tab="system">
+    <div class="panel">
+      <h2>📷 Camera config</h2>
+      <p style="color:var(--muted);font-size:12px;margin:0 0 8px">
+        Resolution presets, HDR, color profile — wired to the active camera.
+      </p>
+      <label>Resolution preset (cosmetic in sim — synth always renders at 160 wide)</label>
+      <select id="cam-res">
+        <option>480P (640×480)</option>
+        <option>720P (1280×720)</option>
+        <option selected>1080P (1920×1080)</option>
+        <option>2.7K (2704×1520)</option>
+        <option>4K (3840×2160)</option>
+        <option>6K (6144×3240)</option>
+        <option>8K (7680×4320)</option>
+      </select>
+      <div class="grid2" style="margin-top:6px">
+        <div><label>HDR</label>
+          <select id="cam-hdr">
+            <option value="off">off</option>
+            <option value="on">on</option>
+          </select>
+        </div>
+        <div><label>Color profile</label>
+          <select id="cam-profile">
+            <option value="standard">standard</option>
+            <option value="rec709">rec709</option>
+            <option value="hlg">HLG</option>
+            <option value="hdr10">HDR10</option>
+            <option value="dlog-m">DLog-M</option>
+          </select>
+        </div>
+      </div>
+      <p style="color:var(--muted);font-size:11px;margin-top:6px">
+        Note: this dashboard reads the values back; live changes require an
+        endpoint that the API doesn't yet expose for sim — but Python callers
+        can set these via <code>CameraSensor.set_resolution / enable_hdr / set_color_profile</code>.
+      </p>
+    </div>
+
+    <div class="panel">
+      <h2>⚠ Anomaly events &amp; failsafe history</h2>
+      <p style="color:var(--muted);font-size:12px;margin:0 0 8px">
+        Critical/emergency anomalies forwarded to the failsafe manager
+        (via the <code>AnomalyFailsafeBridge</code>).
+      </p>
+      <div class="controls" style="margin-bottom:8px">
+        <button onclick="refreshAnomalies()">🔄 Refresh</button>
+        <button onclick="injectAnomaly()">⚡ Inject test anomaly</button>
+      </div>
+      <table id="anomaly-table"><thead><tr><th>time</th><th>severity</th><th>type</th><th>failsafe</th><th>action</th></tr></thead><tbody></tbody></table>
+    </div>
+
+    <div class="panel" style="grid-column: 1 / -1">
+      <h2>Raw telemetry</h2>
+      <pre id="telemetry-raw">(loading…)</pre>
+    </div>
+  </section>
+</main>
+
+<script>
+/* ===================================================================
+   Plumbing
+=================================================================== */
+const $ = sel => document.querySelector(sel);
+const $$ = sel => Array.from(document.querySelectorAll(sel));
+const log = (msg, kind = "info") => {
+  const el = $("#log");
+  if (!el) return;
+  const p = document.createElement("p");
+  const ts = new Date().toLocaleTimeString();
+  const color = kind === "error" ? "color:var(--red)" : kind === "warn" ? "color:var(--yellow)" : "";
+  p.innerHTML = `<span class="ts">[${ts}]</span> <span style="${color}">${msg}</span>`;
+  el.prepend(p);
+  while (el.children.length > 60) el.removeChild(el.lastChild);
+};
+const pill = (id, value) => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = value == null ? "—"
+    : `<span class="state-pill state-${String(value).toLowerCase()}">${value}</span>`;
+};
+async function api(method, path, body = null) {
+  const opts = { method, headers: {"Content-Type": "application/json"} };
+  if (body !== null) opts.body = JSON.stringify(body);
+  const r = await fetch(path, opts);
+  let data;
+  try { data = await r.json(); } catch { data = await r.text(); }
+  if (!r.ok) {
+    const detail = typeof data === "string" ? data : (data.detail || JSON.stringify(data));
+    log(`${method} ${path} → ${r.status}: ${detail}`, "error");
+    throw new Error("api error");
+  }
+  return data;
+}
+
+/* ===================================================================
+   Tabs
+=================================================================== */
+$$("#tabs button").forEach(b => b.addEventListener("click", () => {
+  $$("#tabs button").forEach(x => x.classList.remove("active"));
+  $$(".tab-content").forEach(x => x.classList.remove("active"));
+  b.classList.add("active");
+  $$(`.tab-content[data-tab="${b.dataset.tab}"]`).forEach(x => x.classList.add("active"));
+}));
+
+/* ===================================================================
+   Live feed
+=================================================================== */
+let recording = false;
+function refreshFeed() {
+  const ts = Date.now();
+  const f1 = document.getElementById("feed");
+  const f2 = document.getElementById("feed2");
+  if (f1) f1.src = `/api/media/latest.png?ts=${ts}`;
+  if (f2) f2.src = `/api/media/latest.png?ts=${ts}`;
+}
+setInterval(refreshFeed, 250);
+
+async function snap() {
+  try { const out = await api("POST", "/api/media/snapshot"); log(`📷 ${out.message}`); refreshMedia(); }
+  catch {}
+}
+async function toggleRec() {
+  try {
+    if (!recording) {
+      await api("POST", "/api/media/recording/start");
+      recording = true;
+      ["#rec-btn", "#rec-btn2"].forEach(s => { const b = $(s); if (b) b.innerHTML = "⏹ Stop recording"; });
+      log("⏺ recording started");
+    } else {
+      const out = await api("POST", "/api/media/recording/stop");
+      recording = false;
+      ["#rec-btn", "#rec-btn2"].forEach(s => { const b = $(s); if (b) b.innerHTML = "⏺ Start recording"; });
+      log(`⏹ recording stopped: ${out.summary?.frame_count ?? "?"} frames`);
+      refreshMedia();
+    }
+  } catch {}
+}
+
+/* ===================================================================
+   Dock + Patrols
+=================================================================== */
+async function setupDock() {
+  try {
+    const out = await api("POST", "/api/dock/setup", {
+      latitude: 47.5, longitude: -122.3,
+      rate_pct_per_s: 5.0, launch_min_pct: 80, recall_pct: 25, target_pct: 95, tick_hz: 10,
+      patrol_altitude_m: 20, patrol_radius_m: 40, patrol_lap_count: 1,
+      patrol_points_per_lap: 8, patrol_cruise_speed_mps: 12,
+    });
+    log(`⚙ dock configured (state=${out.dock.state})`);
+  } catch {}
+}
+async function dockDeploy() { try { const out = await api("POST", "/api/dock/deploy", {}); log(`🚁 ${out.message}`); } catch {} }
+async function dockRecall() { try { await api("POST", "/api/dock/recall?reason=manual"); log("↩ recall requested"); } catch {} }
+
+async function addPatrol() {
+  const name = $("#patrol-name").value || "patrol";
+  const period = parseFloat($("#patrol-period").value) || 30;
+  try {
+    const j = await api("POST", "/api/patrols/add", {
+      name, period_s: period, flight_duration_s: period * 0.7, start_immediately: true,
+    });
+    log(`+ patrol '${j.name}' (period ${j.period_s}s)`);
+    $("#patrol-name").value = "";
+    refreshPatrols();
+  } catch {}
+}
+async function removePatrol(id) {
+  try { await api("DELETE", `/api/patrols/${id}`); refreshPatrols(); } catch {}
+}
+async function refreshPatrols() {
+  const list = $("#patrol-list");
+  if (!list) return;
+  try {
+    const data = await fetch("/api/patrols").then(r => r.json());
+    list.innerHTML = "";
+    if (!data.jobs || data.jobs.length === 0) {
+      list.innerHTML = '<span class="empty">no patrols configured</span>';
+      return;
+    }
+    data.jobs.forEach(j => {
+      const div = document.createElement("div");
+      div.className = "row";
+      const due = Math.max(0, (j.next_due_at - Date.now()/1000)).toFixed(0);
+      div.innerHTML = `
+        <span class="k">${j.name} <small style="color:var(--muted)">(${j.runs} runs, next ${due}s)</small></span>
+        <button onclick="removePatrol('${j.job_id}')">✕</button>`;
+      list.appendChild(div);
+    });
+  } catch {}
+}
+
+/* ===================================================================
+   SAR
+=================================================================== */
+let sarMissionId = null;
+async function sarPlan() {
+  try {
+    const body = {
+      center: {latitude: +$("#sar-lat").value, longitude: +$("#sar-lon").value},
+      pattern_type: $("#sar-pattern").value,
+      altitude: +$("#sar-alt").value, track_spacing: +$("#sar-spacing").value,
+      speed: +$("#sar-speed").value, legs: +$("#sar-legs").value,
+      radius: +$("#sar-radius").value,
+    };
+    const out = await api("POST", "/api/sar/plan", body);
+    log(`🗺 SAR plan: ${out.waypoint_count} waypoints, ~${out.estimated_time_s.toFixed(0)}s`);
+  } catch {}
+}
+async function sarRun() {
+  try {
+    const body = {
+      center: {latitude: +$("#sar-lat").value, longitude: +$("#sar-lon").value},
+      pattern_type: $("#sar-pattern").value,
+      altitude: +$("#sar-alt").value, track_spacing: +$("#sar-spacing").value,
+      speed: +$("#sar-speed").value, legs: +$("#sar-legs").value,
+      radius: +$("#sar-radius").value,
+      return_to_start: false, photo_interval_s: 1.0,
+    };
+    const out = await api("POST", "/api/sar/run", body);
+    sarMissionId = out.mission_id;
+    log(`▶ SAR running: ${out.mission_id}`);
+  } catch {}
+}
+async function refreshSAR() {
+  if (!sarMissionId) return;
+  try {
+    const r = await fetch(`/api/sar/${sarMissionId}/report`).then(r => r.json());
+    $("#sar-id").textContent = sarMissionId;
+    pill("sar-state", r.state);
+    $("#sar-progress").textContent = `${r.progress_percent.toFixed(0)}%`;
+    $("#sar-counts").textContent = `${r.target_count} targets / ${r.photos_taken} photos`;
+    $("#sar-invest").textContent = `${r.investigations_completed} done`;
+    const tbody = $("#sar-targets tbody");
+    tbody.innerHTML = "";
+    (r.targets || []).slice(0, 20).forEach(t => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${t.detection_type}</td>
+        <td class="v">${t.confidence.toFixed(2)}</td>
+        <td class="v">${t.latitude.toFixed(5)}, ${t.longitude.toFixed(5)}</td>
+        <td>${t.metadata?.investigated ? "✓" : "—"}</td>`;
+      tbody.appendChild(tr);
+    });
+  } catch {}
+}
+
+let swarmId = null;
+async function swarmRun() {
+  try {
+    const body = {
+      drone_count: +$("#swarm-n").value,
+      center: {latitude: 47.5, longitude: -122.3},
+      radius_m: +$("#swarm-radius").value,
+      pattern_type: $("#swarm-pattern").value,
+      altitude: 30, track_spacing: 40, speed: +$("#swarm-speed").value,
+      return_to_start: false,
+    };
+    const out = await api("POST", "/api/swarm-sar/run", body);
+    swarmId = out.swarm_id;
+    log(`▶ swarm SAR: ${out.drone_count} drones (id ${out.swarm_id})`);
+  } catch {}
+}
+async function refreshSwarm() {
+  if (!swarmId) return;
+  try {
+    const r = await fetch(`/api/swarm-sar/${swarmId}/report`).then(r => r.json());
+    $("#swarm-id").textContent = swarmId;
+    $("#swarm-counts").textContent = `${r.completed_drones} / ${r.drone_count}`;
+    $("#swarm-targets").textContent = r.target_count;
+    $("#swarm-duration").textContent = r.duration_s.toFixed(1) + "s";
+  } catch {}
+}
+
+/* ===================================================================
+   Survival: beacon / supply drop / safe corridor
+=================================================================== */
+async function bcSample() {
+  try {
+    const out = await api("POST", "/api/survival/beacon/sample", {
+      latitude: +$("#bc-lat").value, longitude: +$("#bc-lon").value,
+      altitude: +$("#bc-alt").value, rssi_dbm: +$("#bc-rssi").value,
+    });
+    log(`📡 beacon sample → ${out.sample_count} total`);
+    bcFix();
+  } catch {}
+}
+async function bcReset() { try { await api("POST", "/api/survival/beacon/reset", {}); bcFix(); log("📡 beacon samples cleared"); } catch {} }
+async function bcFix() {
+  try {
+    const r = await fetch("/api/survival/beacon/fix").then(r => r.json());
+    $("#bc-samples").textContent = r.sample_count;
+    if (!r.fix) {
+      $("#bc-pos").textContent = "—"; $("#bc-method").textContent = "—";
+      $("#bc-conf").textContent = "—"; $("#bc-res").textContent = "—";
+      return;
+    }
+    $("#bc-pos").textContent = `${r.fix.latitude.toFixed(5)}, ${r.fix.longitude.toFixed(5)}`;
+    $("#bc-method").textContent = r.fix.method;
+    $("#bc-conf").textContent = (r.fix.confidence * 100).toFixed(0) + "%";
+    $("#bc-res").textContent = r.fix.residual_m.toFixed(1) + " m";
+  } catch {}
+}
+
+async function sdPlan() {
+  try {
+    const body = {
+      target: {latitude: +$("#sd-lat").value, longitude: +$("#sd-lon").value},
+      wind_speed_mps: +$("#sd-wspd").value,
+      wind_direction_deg: +$("#sd-wdir").value,
+      release_altitude_agl_m: +$("#sd-alt").value,
+      release_speed_mps: +$("#sd-speed").value,
+      parachute_deploy_at_m: +$("#sd-chute").value,
+    };
+    const r = await api("POST", "/api/survival/supply-drop/plan", body);
+    $("#sd-rpos").textContent = `${r.release_point.latitude.toFixed(5)}, ${r.release_point.longitude.toFixed(5)}`;
+    $("#sd-heading").textContent = r.release_point.heading_deg.toFixed(0) + "°";
+    $("#sd-falltime").textContent = r.fall_time_s.toFixed(2) + " s";
+    $("#sd-drift").textContent = r.horizontal_drift_m.toFixed(1) + " m";
+    $("#sd-radius").textContent = r.expected_impact_radius_m.toFixed(1) + " m";
+    log(`🪂 release point computed (drift ${r.horizontal_drift_m.toFixed(1)} m)`);
+  } catch {}
+}
+
+async function scPlan() {
+  const raw = $("#sc-threats").value.trim();
+  const threats = raw.split("\n").filter(Boolean).map(line => {
+    const [lat, lon, r, name] = line.split(",");
+    return {latitude: +lat, longitude: +lon, radius_m: +r, name: (name || "threat").trim()};
+  });
+  try {
+    const r = await api("POST", "/api/survival/corridor/plan", {
+      start: {latitude: +$("#sc-slat").value, longitude: +$("#sc-slon").value},
+      goal: {latitude: +$("#sc-glat").value, longitude: +$("#sc-glon").value},
+      threats, margin_m: +$("#sc-margin").value,
+    });
+    $("#sc-safe").innerHTML = r.safe
+      ? '<span class="state-pill state-ready">safe</span>'
+      : '<span class="state-pill state-error">unsafe</span>';
+    $("#sc-len").textContent = r.safe ? r.total_length_m.toFixed(0) + " m" : "—";
+    $("#sc-wps").textContent = (r.waypoints || []).length;
+    $("#sc-mind").textContent = r.min_threat_distance_m == null ? "—" : r.min_threat_distance_m.toFixed(0) + " m";
+    $("#sc-fail").textContent = r.failure_reason || "—";
+    log(`🛤 corridor: ${r.safe ? "safe" : "unsafe"}, ${(r.waypoints || []).length} waypoints`);
+  } catch {}
+}
+
+/* ===================================================================
+   Media library + highlight reel
+=================================================================== */
+async function refreshMedia() {
+  try {
+    const r = await fetch("/api/media").then(r => r.json());
+    $("#media-photos").textContent = (r.photos || []).length;
+    $("#media-videos").textContent = (r.videos || []).length;
+    $("#media-bytes").textContent = ((r.total_bytes || 0) / 1024).toFixed(1) + " KB";
+    $("#media-root").textContent = r.root || "—";
+    const list = $("#media-video-list");
+    if (list) {
+      list.innerHTML = "";
+      (r.videos || []).slice(-5).reverse().forEach(v => {
+        const div = document.createElement("div");
+        div.className = "row";
+        div.innerHTML = `<span class="k" style="word-break:break-all">${v.filename}</span>
+          <button onclick="useBundle('${v.path.replace(/\\/g, '\\\\')}')">→ Reel</button>`;
+        list.appendChild(div);
+      });
+    }
+  } catch {}
+}
+function useBundle(path) {
+  $("#hl-bundle").value = path;
+  $$("#tabs button").forEach(x => x.classList.remove("active"));
+  $$(".tab-content").forEach(x => x.classList.remove("active"));
+  document.querySelector('#tabs button[data-tab="media"]').classList.add("active");
+  document.querySelector('.tab-content[data-tab="media"]').classList.add("active");
+}
+async function hlAutoFill() {
+  await refreshMedia();
+  try {
+    const r = await fetch("/api/media").then(r => r.json());
+    const videos = r.videos || [];
+    if (!videos.length) return log("no videos yet — start a recording first", "warn");
+    $("#hl-bundle").value = videos[videos.length - 1].path;
+    const sample = (videos[videos.length - 1].timestamp || (Date.now() / 1000));
+    $("#hl-events").value = `${sample},target,person,1.0,0.95`;
+    log("filled with latest video bundle");
+  } catch {}
+}
+async function hlBuild() {
+  const bundle = $("#hl-bundle").value.trim();
+  if (!bundle) return log("highlight reel needs a bundle path", "warn");
+  const events = $("#hl-events").value.trim().split("\n").filter(Boolean).map(line => {
+    const [ts, kind, label, imp, conf] = line.split(",");
+    return {
+      timestamp: +ts, kind: (kind || "event").trim(), label: (label || "").trim(),
+      importance: imp ? +imp : 1.0, confidence: conf ? +conf : 1.0,
+    };
+  });
+  try {
+    const r = await api("POST", "/api/media/highlight-reel", {
+      bundle_path: bundle, events,
+      pre_event_s: 1.0, post_event_s: 1.5, max_reel_duration_s: 30,
+    });
+    $("#hl-id").textContent = r.reel_id;
+    $("#hl-clips").textContent = r.clip_count;
+    $("#hl-duration").textContent = r.total_duration_s.toFixed(2) + " s";
+    const tbody = $("#hl-table tbody");
+    tbody.innerHTML = "";
+    (r.clips || []).forEach(c => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td class="v">${c.clip_id}</td>
+        <td class="v">${c.duration_s.toFixed(2)}s</td>
+        <td class="v">${c.score.toFixed(2)}</td>
+        <td>${(c.events || []).map(e => e.label).join(", ")}</td>`;
+      tbody.appendChild(tr);
+    });
+    log(`🎞 reel ${r.reel_id}: ${r.clip_count} clips, ${r.total_duration_s.toFixed(1)}s`);
+  } catch {}
+}
+
+/* ===================================================================
+   LLM
+=================================================================== */
+async function llmPlan() {
+  const cmd = $("#llm-cmd").value.trim();
+  if (!cmd) return log("type a command first", "warn");
+  try {
+    const r = await api("POST", "/api/llm/mission/plan", {
+      command: cmd,
+      home_position: {latitude: 47.5, longitude: -122.3},
+    });
+    $("#llm-result").textContent = JSON.stringify(r, null, 2);
+    if (r.mission) log(`🧠 LLM → ${r.command.command_type} → ${r.mission.waypoint_count} waypoints`);
+    else log(`🧠 LLM → ${r.command.command_type} (${r.reason || "not convertible"})`);
+  } catch {}
+}
+async function llmLoad() {
+  const cmd = $("#llm-cmd").value.trim();
+  if (!cmd) return log("type a command first", "warn");
+  try {
+    const r = await api("POST", "/api/llm/mission/load", {
+      command: cmd,
+      home_position: {latitude: 47.5, longitude: -122.3},
+      persist: true, start: false,
+    });
+    $("#llm-result").textContent = JSON.stringify(r, null, 2);
+    log(`💾 mission loaded: ${r.mission.waypoint_count} waypoints → ${r.saved_path || "(no save)"}`);
+  } catch (e) {
+    log("LLM mission load failed — see error above", "error");
+  }
+}
+
+/* ===================================================================
+   Scan
+=================================================================== */
+let currentScanId = null;
+async function planScan() {
+  try {
+    const out = await api("POST", "/api/scan3d/plan", {
+      center_lat: +$("#scn-lat").value, center_lon: +$("#scn-lon").value,
+      target_height_m: +$("#scn-h").value, target_radius_m: +$("#scn-r").value,
+      shells: +$("#scn-shells").value, bins_per_shell: +$("#scn-bins").value,
+      standoff_m: +$("#scn-stand").value, coverage_target: +$("#scn-target").value,
+    });
+    currentScanId = out.scan_id;
+    log(`🎯 scan planned: ${out.scan_id} (${out.planned_waypoints.length} wp)`);
+    refreshScan();
+  } catch {}
+}
+async function captureScan() {
+  if (!currentScanId) return log("plan a scan first", "warn");
+  try { await api("POST", `/api/scan3d/${currentScanId}/capture`); refreshScan(); } catch {}
+}
+async function captureAll() {
+  if (!currentScanId) return log("plan a scan first", "warn");
+  for (let i = 0; i < 200; i++) {
+    try {
+      const out = await api("POST", `/api/scan3d/${currentScanId}/capture`);
+      if (!out.captured) break;
+    } catch { break; }
+  }
+  refreshScan();
+}
+function setScanField(name, htmlOrText, isHtml = false) {
+  // Updates every copy of a scan widget (the overview tab AND the scan tab
+  // both carry [data-scan="<name>"] cells).
+  document.querySelectorAll(`[data-scan="${name}"]`).forEach(el => {
+    if (isHtml) el.innerHTML = htmlOrText;
+    else el.textContent = htmlOrText;
+  });
+}
+async function refreshScan() {
+  if (!currentScanId) return;
+  try {
+    const r = await fetch(`/api/scan3d/${currentScanId}/report`).then(r => r.json());
+    setScanField("id", r.scan_id);
+    const sv = String(r.state).toLowerCase();
+    setScanField("state", `<span class="state-pill state-${sv}">${r.state}</span>`, true);
+    setScanField("count", `${r.captured_waypoints} / ${r.captured_waypoints + r.planned_waypoints}`);
+    setScanField("coverage", (r.overall_coverage * 100).toFixed(1) + "%");
+    setScanField("refine", r.refinement_waypoints);
+    renderScanGrid(r.coverage_per_shell);
+  } catch {}
+}
+function renderScanGrid(matrix) {
+  document.querySelectorAll('[data-scan="grid"]').forEach(grid => {
+    grid.innerHTML = "";
+    if (!matrix || matrix.length === 0) return;
+    const bins = matrix[0].length;
+    grid.style.gridTemplateColumns = `repeat(${bins}, 1fr)`;
+    matrix.forEach(row => row.forEach(q => {
+      const cell = document.createElement("div");
+      cell.className = "scan-cell";
+      cell.style.background = `rgba(124, 196, 255, ${0.10 + Math.min(1, q) * 0.7})`;
+      cell.title = q.toFixed(2);
+      grid.appendChild(cell);
+    }));
+  });
+}
+function planScanQuick() {
+  // Sensible defaults from the Scan tab inputs (or hardcoded if blank)
+  const get = (id, d) => { const el = $(id); return el && el.value ? +el.value : d; };
+  fetch("/api/scan3d/plan", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      center_lat: get("#scn-lat", 47.5), center_lon: get("#scn-lon", -122.3),
+      target_height_m: get("#scn-h", 30), target_radius_m: get("#scn-r", 5),
+      shells: get("#scn-shells", 3), bins_per_shell: get("#scn-bins", 8),
+      standoff_m: get("#scn-stand", 12),
+    })
+  }).then(r => r.json()).then(out => {
+    currentScanId = out.scan_id;
+    log(`🎯 scan planned: ${out.scan_id} (${out.planned_waypoints.length} wp)`);
+    refreshScan();
+  }).catch(() => {});
+}
+function llmPlanQuick() {
+  const v = $("#llm-cmd-quick").value.trim();
+  if (!v) return;
+  const big = $("#llm-cmd");
+  if (big) big.value = v;
+  llmPlan();
+}
+function openTab(name) {
+  const target = document.querySelector(`#tabs button[data-tab="${name}"]`);
+  if (target) target.click();
+}
+
+/* ===================================================================
+   Inspection report
+=================================================================== */
+async function insReport() {
+  try {
+    const params = new URLSearchParams({asset_name: $("#ins-asset").value || "asset"});
+    if ($("#ins-operator").value) params.append("operator_id", $("#ins-operator").value);
+    if ($("#ins-out").value) params.append("output_dir", $("#ins-out").value);
+    const r = await api("POST", `/api/inspection/report?${params}`);
+    $("#ins-id").textContent = r.report_id;
+    $("#ins-defects").textContent = r.summary.defect_count;
+    pill("ins-sev", r.summary.highest_severity);
+    $("#ins-action").textContent = r.summary.actionable ? "yes" : "no";
+    $("#ins-json").textContent = r.json_path || "(in-memory only)";
+    log(`🧾 inspection report ${r.report_id}: ${r.summary.defect_count} defects`);
+  } catch (e) {
+    /* the error has already been logged */
+  }
+}
+
+/* ===================================================================
+   Anomaly history
+=================================================================== */
+async function refreshAnomalies() {
+  const tbody = $("#anomaly-table tbody");
+  tbody.innerHTML = "";
+  try {
+    const r = await fetch("/api/anomalies/history").then(r => r.json());
+    const hist = r.history || [];
+    if (hist.length === 0) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td colspan="5" class="empty">no anomalies forwarded yet — click "Inject test anomaly" to verify the bridge.</td>`;
+      tbody.appendChild(tr);
+      return;
+    }
+    hist.slice().reverse().forEach(h => {
+      const tr = document.createElement("tr");
+      const ts = new Date(h.triggered_at * 1000).toLocaleTimeString();
+      tr.innerHTML = `
+        <td class="v">${ts}</td>
+        <td><span class="state-pill state-${h.severity}">${h.severity}</span></td>
+        <td class="v">${h.anomaly_type} <small style="color:var(--muted)">${h.component}</small></td>
+        <td class="v">${h.failsafe_type}</td>
+        <td class="v">${h.failsafe_action}</td>`;
+      tbody.appendChild(tr);
+    });
+  } catch {}
+}
+async function injectAnomaly() {
+  try {
+    const r = await api("POST", "/api/anomalies/inject");
+    log(`⚡ injected anomaly (fired=${r.anomaly_fired}, severity=${r.severity || "?"})`);
+    refreshAnomalies();
+  } catch {}
+}
+
+/* ===================================================================
+   Poll loop
+=================================================================== */
+async function pollOnce() {
+  $("#clock-pill").textContent = new Date().toLocaleTimeString();
+
+  // Telemetry
+  try {
+    const t = await fetch("/api/telemetry").then(r => r.json());
+    if (t) {
+      $("#telemetry-raw").textContent = JSON.stringify(t, null, 2);
+      const d = $("#telemetry");
+      if (d) {
+        d.innerHTML = "";
+        const rows = [
+          ["lat,lon", t.position ? `${t.position.latitude?.toFixed(5)}, ${t.position.longitude?.toFixed(5)}` : "—"],
+          ["altitude", t.position?.altitude != null ? `${t.position.altitude.toFixed(1)} m` : "—"],
+          ["battery", t.battery?.level != null ? `${t.battery.level.toFixed(1)}%` : "—"],
+          ["flight mode", t.flight_mode || "—"],
+          ["armed", t.armed ? "yes" : "no"],
+        ];
+        rows.forEach(([k, v]) => {
+          const row = document.createElement("div");
+          row.className = "row";
+          row.innerHTML = `<span class="k">${k}</span><span class="v">${v}</span>`;
+          d.appendChild(row);
+        });
+      }
+    }
+  } catch {}
+
+  // Dock
+  try {
+    const d = await fetch("/api/dock/status").then(r => { if (!r.ok) throw 0; return r.json(); });
+    pill("dock-state", d.state);
+    $("#dock-battery").textContent = `${d.battery_pct.toFixed(1)}%`;
+    $("#dock-battery-bar").style.width = `${d.battery_pct}%`;
+    $("#dock-atpad").textContent = d.drone_at_dock ? "yes" : "no";
+    $("#dock-counters").textContent = `${d.deployments} / ${d.adapter?.completions ?? "—"} / ${d.adapter?.aborts ?? "—"}`;
+    const ls = d.adapter?.last_runtime_status;
+    if (ls) {
+      pill("auto-phase", ls.phase);
+      $("#auto-ticks").textContent = ls.tick_count;
+    }
+    $("#conn-pill").textContent = "connected";
+    $("#conn-pill").style.color = "var(--green)";
+  } catch {
+    pill("dock-state", null);
+    $("#dock-battery").textContent = "—";
+    $("#dock-battery-bar").style.width = "0%";
+    $("#dock-atpad").textContent = "—";
+    $("#dock-counters").textContent = "—";
+    pill("auto-phase", null);
+    $("#auto-ticks").textContent = "—";
+  }
+
+  await refreshPatrols();
+  await refreshSAR();
+  await refreshSwarm();
+  await refreshMedia();
+  if (currentScanId) await refreshScan();
+
+  // Overview-only compact mirrors
+  if (sarMissionId) {
+    try {
+      const r = await fetch(`/api/sar/${sarMissionId}/report`).then(r => r.json());
+      const el = $("#sar-state-overview");
+      if (el) el.innerHTML = `<span class="state-pill state-${String(r.state).toLowerCase()}">${r.state}</span>`;
+      const c = $("#sar-counts-overview");
+      if (c) c.textContent = `${r.progress_percent.toFixed(0)}% / ${r.target_count} found`;
+    } catch {}
+  }
+  try {
+    const r = await fetch("/api/anomalies/history").then(r => r.json());
+    const hist = r.history || [];
+    const cnt = $("#anomaly-count-overview");
+    if (cnt) cnt.textContent = hist.length;
+    const last = $("#anomaly-last-overview");
+    if (last) {
+      if (hist.length === 0) last.textContent = "—";
+      else {
+        const h = hist[hist.length - 1];
+        last.innerHTML = `<span class="state-pill state-${h.severity}">${h.severity}</span> ${h.anomaly_type}`;
+      }
+    }
+  } catch {}
+}
+setInterval(pollOnce, 1500);
+pollOnce();
+refreshFeed();
+</script>
+</body>
+</html>

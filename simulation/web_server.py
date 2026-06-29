@@ -2794,6 +2794,30 @@ def run_server(host='0.0.0.0', port=5000, debug=False):
     # Initialize advanced features
     init_advanced_features()
 
+    # Mirror the new FastAPI routes (SAR, survival, dock, scan, LLM, etc.)
+    # onto this Flask app so the existing dashboard can call them too.
+    # The advanced endpoints lazily spin up a Drone if the dashboard hasn't
+    # clicked Start yet, so the operator can use the drawer without first
+    # starting the existing simulation.
+    def _get_or_create_drone():
+        d = simulation.get('drone')
+        if d is not None:
+            return d
+        try:
+            d = create_drone()
+            simulation['drone'] = d
+            print("[advops] Lazy-created drone for advanced ops")
+        except Exception as exc:
+            print(f"[advops] Lazy drone creation failed: {exc}")
+            return None
+        return d
+    try:
+        from simulation.flask_advanced_routes import register_advanced_routes
+        register_advanced_routes(app, get_drone=_get_or_create_drone)
+        print("[init] Advanced routes registered (dock, SAR, survival, scan, LLM, anomalies)")
+    except Exception as exc:
+        print(f"[init] Failed to register advanced routes: {exc}")
+
     print(f"\n{'='*60}")
     print(f"  Drone Simulation Dashboard")
     print(f"  Open in browser: http://localhost:{port}")
