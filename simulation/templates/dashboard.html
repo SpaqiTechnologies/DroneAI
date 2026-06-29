@@ -3934,9 +3934,81 @@
         function startSimulation() {
             const speed = document.getElementById('speed-slider').value;
             const scenario = document.getElementById('scenario-select').value;
+            const btn = document.getElementById('btn-start');
+
+            // Immediate visible feedback so the user knows the click registered.
+            const original = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Starting…';
+
+            // Recover the button if the server doesn't respond in 3s (e.g.
+            // socket disconnected, page loaded before server was up).
+            const fallback = setTimeout(() => {
+                btn.disabled = false;
+                btn.textContent = original;
+                addLogEntry('Start timed out — server did not respond. ' +
+                    'Check that the server is running, or hit Stop and try again.', 'error');
+            }, 3000);
+
+            // Watch for the success/error events and clear the fallback.
+            const onStarted = () => { clearTimeout(fallback); cleanup(); };
+            const onErr = (data) => {
+                clearTimeout(fallback);
+                const msg = (data && data.message) || 'unknown error';
+                // If the server says the sim is already running, sync the UI
+                // to match reality instead of leaving the user confused.
+                if (/already running/i.test(msg)) {
+                    btn.disabled = true;
+                    btn.textContent = original;
+                    document.getElementById('btn-stop').disabled = false;
+                    addLogEntry('Simulation was already running — synced UI. Hit Stop to reset.', 'warning');
+                } else {
+                    btn.disabled = false;
+                    btn.textContent = original;
+                    addLogEntry('Start failed: ' + msg, 'error');
+                }
+                cleanup();
+            };
+            const cleanup = () => {
+                socket.off('simulation_started', onStarted);
+                socket.off('error', onErr);
+            };
+            socket.once('simulation_started', onStarted);
+            socket.once('error', onErr);
+
             socket.emit('start_simulation', {speed: parseFloat(speed), scenario: scenario});
             pathCoordinates = [];
             if (flightPath) { map.removeLayer(flightPath); flightPath = null; }
+        }
+
+        // Sync button state from the server on page load. If a previous
+        // session left the simulation running, the dashboard now shows
+        // that immediately instead of letting the user click Start to no effect.
+        async function syncSimulationStateFromServer() {
+            try {
+                const res = await fetch('/api/simulation/status');
+                if (!res.ok) return;
+                const st = await res.json();
+                const startBtn = document.getElementById('btn-start');
+                const stopBtn = document.getElementById('btn-stop');
+                if (st.running) {
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                    addLogEntry('Resumed: simulation is already running on the server.', 'info');
+                } else {
+                    startBtn.disabled = false;
+                    stopBtn.disabled = true;
+                }
+            } catch (e) {
+                addLogEntry('Could not reach the server on load. Is it running?', 'error');
+            }
+        }
+        // Fire on DOM ready (the dashboard already sets up a DOMContentLoaded
+        // handler at the bottom; this is safe to invoke immediately too).
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', syncSimulationStateFromServer);
+        } else {
+            syncSimulationStateFromServer();
         }
 
         function stopSimulation() {
