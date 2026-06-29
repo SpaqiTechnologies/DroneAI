@@ -25,9 +25,95 @@ pip install -r requirements.txt
 python run_simulation.py
 ```
 
-→ Open **http://localhost:5000** in your browser.
+→ Open **http://localhost:5000** in your browser. The map opens centered on **Gjakova, Kosovo** (42.3803°N, 20.4308°E) — that's where the simulated drone spawns.
 
-Click **Start** to spin up a simulated drone. Use the map to drop waypoints, the gimbal pad to aim the camera, and the **🛰 Advanced Ops** pill (top-right) to drive the newer features: SAR missions, beacon trilateration, supply drops, 3D scans, docking station, and more.
+---
+
+## How to run a simulation flight
+
+Full step-by-step to take off, fly waypoints, and land.
+
+### Step 1 — Start the simulation
+
+Click **Start** in the *Simulation* card (top of the right sidebar).
+
+You should see:
+
+- Event log: `Simulation started (normal, 1x)`
+- Purple ✈ drone icon appears on the map at Gjakova
+- Green 🏠 home marker appears at the same spot
+- Telemetry overlay (right edge of map) starts ticking: altitude, battery, satellites
+- Wait ~2 seconds for the GPS lock — satellites should reach **10**
+
+### Step 2 — Add waypoints
+
+Make sure the **Waypoints** tab is active in the mission planner panel (right sidebar), then **click anywhere on the map**.
+
+You should see:
+
+- Numbered markers (1, 2, 3…) appear at each click location
+- Dashed cyan path connects them in order
+- Waypoint list in the right panel fills with rows showing `lat, lon` + editable altitude
+- Event log: `Waypoint N added`
+
+Add **2–5 waypoints** for a good first flight. Each one should be at least 100m from the previous (scroll out and click around Gjakova).
+
+> **Tip:** edit any waypoint's altitude inline by clicking its number, typing, and pressing Enter.
+
+### Step 3 — Upload the mission
+
+Click **Upload** (primary button under the waypoint list).
+
+You should see:
+
+- Event log: `Mission uploaded successfully`
+- **Start** button (under Upload, in the mission panel) becomes enabled
+
+### Step 4 — Arm the drone
+
+Click **ARM** in the *Arming System* card (right sidebar, below Simulation).
+
+You should see:
+
+- Big "DISARMED" badge flips to green "ARMED"
+- Event log: `Drone ARMED`
+
+If you get a pre-arm error: check the GPS overlay shows **satellites: 10** and **3D fix**. Wait 2-3 seconds after starting the simulation before arming.
+
+### Step 5 — Start the mission
+
+Click the mission **Start** button (under the waypoint list — this is the *mission* Start, NOT the simulation Start).
+
+You should see:
+
+- Event log: `Mission started`
+- Drone marker takes off (altitude climbs from 0 → waypoint altitude in the telemetry overlay)
+- Purple ✈ icon flies along the dashed cyan path
+- As each waypoint is reached: event log shows `Waypoint N reached`
+- After the last waypoint: `Mission completed`
+
+### Common issues
+
+| Problem | Fix |
+|---|---|
+| Drone "moves a couple inches" then stops | You uploaded an empty mission. Make sure waypoints show in the right panel BEFORE clicking Upload. |
+| `Pre-arm checks failed: GPS: 2 satellites` | Click Start, **wait 2-3 seconds**, then ARM. GPS sim needs time to lock. |
+| Drone doesn't move after Start mission | Check `armed=True` in telemetry and `mission=running` (or watch event log for the chain). |
+| Map shows old waypoints I can't remove | Click **Clear** in the mission panel, or refresh the page. |
+| Start Simulation button does nothing | Simulation was probably already running. Hit **Stop** first, or hard-refresh the page (Ctrl+Shift+R). |
+
+### Going further with the Advanced Ops drawer
+
+Click the **🛰 Advanced Ops** pill at the top-right of the page to open a side drawer with 6 tabs for the newer features:
+
+- **🏠 Dock** — drone-in-a-box state machine, scheduled patrols
+- **🚨 SAR** — single + swarm search-and-rescue
+- **🆘 Survival** — beacon trilateration, supply-drop, safe corridor
+- **🏗 Scan** — adaptive 3D scan with per-bin coverage heatmap
+- **🎬 Media** — highlight reel builder, LLM mission planner, inspection report
+- **⚙ System** — anomaly history + inject-test button, event log
+
+The drawer lives on top of the existing dashboard — your map / mission / telemetry stay running underneath.
 
 ---
 
