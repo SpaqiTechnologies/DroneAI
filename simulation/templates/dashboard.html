@@ -3892,7 +3892,9 @@
 
                 if (!droneMarker) {
                     console.log('[updateMap] Creating drone marker');
-                    droneMarker = L.marker(pos, {icon: droneIcon}).addTo(map);
+                    // zIndexOffset = 1000 keeps the drone visible on top of
+                    // the home marker (they share coordinates on takeoff).
+                    droneMarker = L.marker(pos, {icon: droneIcon, zIndexOffset: 1000}).addTo(map);
                     // Center map on drone when first created
                     map.setView(pos, 15);
                 } else {
