@@ -4790,8 +4790,9 @@
             }).addTo(map);
         }
 
-        // Click on map to add waypoint
+        // Click on map to add waypoint (skipped while drawing a geofence)
         map.on('click', function(e) {
+            if (drawingMode) return;  // geofence drawing has priority
             if (currentMission.state === 'idle' || currentMission.state === 'uploaded') {
                 addWaypoint(e.latlng.lat, e.latlng.lng);
                 updateMissionMarkers();
@@ -5397,6 +5398,431 @@
                 lucide.createIcons();
             }
         });
+    </script>
+
+    <!-- ============================================================
+         MODERN GEOFENCE + WAYPOINT TOOLBAR
+         Floating panel that overlays the map. Activates when the
+         operator clicks the Circle / Polygon buttons in the right
+         sidebar. Provides:
+         - Visible drawing mode indicator
+         - Radius slider for circle (live preview, no prompt() dialog)
+         - Vertex counter + Finish/Cancel for polygon
+         - Inclusion / Exclusion toggle on creation
+         Also installs inline editors on waypoint + geofence rows.
+         ============================================================ -->
+    <style>
+        #drawing-toolbar {
+            position: fixed; top: 86px; left: 50%; transform: translate(-50%, -110%);
+            z-index: 9100; pointer-events: auto; opacity: 0;
+            transition: transform 0.2s ease, opacity 0.2s ease;
+            background: linear-gradient(180deg, #161b25 0%, #0c1018 100%);
+            border: 1px solid rgba(124, 196, 255, 0.35);
+            border-radius: 999px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45),
+                        0 0 0 4px rgba(124, 196, 255, 0.07);
+            padding: 8px 14px;
+            display: flex; align-items: center; gap: 12px;
+            font: 12px/1 'Inter', system-ui, sans-serif; color: #e6ebf2;
+            min-width: 360px; max-width: 720px;
+        }
+        #drawing-toolbar.visible { transform: translate(-50%, 0); opacity: 1; }
+        #drawing-toolbar .icon {
+            width: 26px; height: 26px; border-radius: 50%;
+            background: linear-gradient(135deg, #4a8fff, #6c5cff);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 14px; flex-shrink: 0;
+        }
+        #drawing-toolbar .label {
+            display: flex; flex-direction: column; gap: 2px; min-width: 0;
+        }
+        #drawing-toolbar .label .title {
+            font-weight: 600; font-size: 12px; letter-spacing: 0.3px;
+        }
+        #drawing-toolbar .label .sub {
+            font-size: 10px; color: #8b94a6; letter-spacing: 0.4px;
+        }
+        #drawing-toolbar .slider-wrap {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 10px; border-radius: 999px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        #drawing-toolbar .slider-wrap input[type=range] {
+            -webkit-appearance: none; appearance: none;
+            width: 130px; height: 4px; border-radius: 2px;
+            background: rgba(255,255,255,0.10); outline: none;
+        }
+        #drawing-toolbar .slider-wrap input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none;
+            width: 14px; height: 14px; border-radius: 50%; cursor: pointer;
+            background: linear-gradient(135deg, #4a8fff, #6c5cff);
+            box-shadow: 0 0 0 3px rgba(74, 143, 255, 0.18);
+        }
+        #drawing-toolbar .slider-wrap .val {
+            font: 600 11px 'JetBrains Mono', monospace; color: #7cc4ff;
+            min-width: 56px; text-align: right;
+        }
+        #drawing-toolbar .pill-btn {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            color: #e6ebf2; border-radius: 999px; padding: 6px 14px;
+            font: 600 11px inherit; cursor: pointer; letter-spacing: 0.3px;
+            display: inline-flex; align-items: center; gap: 4px;
+        }
+        #drawing-toolbar .pill-btn.primary {
+            background: linear-gradient(135deg, #4a8fff, #6c5cff);
+            border-color: transparent; color: #fff;
+        }
+        #drawing-toolbar .pill-btn.danger {
+            background: rgba(239, 111, 111, 0.12); border-color: rgba(239, 111, 111, 0.35);
+            color: #ef6f6f;
+        }
+        #drawing-toolbar .pill-btn:hover { filter: brightness(1.12); }
+        #drawing-toolbar .pill-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        #drawing-toolbar .toggle {
+            display: inline-flex; gap: 1px; padding: 2px; border-radius: 999px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        #drawing-toolbar .toggle button {
+            background: transparent; border: none; color: #8b94a6;
+            font: 600 10px inherit; padding: 5px 11px; border-radius: 999px;
+            cursor: pointer; letter-spacing: 0.3px;
+        }
+        #drawing-toolbar .toggle button.on {
+            background: linear-gradient(135deg, #4a8fff, #6c5cff); color: #fff;
+        }
+        #map-cursor-crosshair #map { cursor: crosshair !important; }
+        #map-cursor-crosshair .leaflet-grab { cursor: crosshair !important; }
+
+        /* Modernised waypoint and geofence cards */
+        .waypoint-item, .geofence-item { border-radius: 8px !important; }
+        .wp-alt-input {
+            background: #0c1018; border: 1px solid rgba(255,255,255,0.10);
+            color: #e6ebf2; border-radius: 4px; padding: 2px 6px;
+            font: 600 11px 'JetBrains Mono', monospace; width: 60px;
+        }
+        .wp-alt-input:focus { outline: 1px solid #7cc4ff; }
+        .gf-incl-toggle {
+            display: inline-flex; padding: 2px;
+            background: rgba(255,255,255,0.05); border-radius: 999px;
+            border: 1px solid rgba(255,255,255,0.08); margin-right: 4px;
+        }
+        .gf-incl-toggle button {
+            background: transparent; border: none; color: #8b94a6;
+            font: 600 9px sans-serif; padding: 3px 9px; border-radius: 999px;
+            cursor: pointer; letter-spacing: 0.3px;
+        }
+        .gf-incl-toggle button.on.include { background: #5fd07c; color: #07140d; }
+        .gf-incl-toggle button.on.exclude { background: #ef6f6f; color: #1a0606; }
+    </style>
+
+    <div id="drawing-toolbar" aria-hidden="true">
+        <!-- contents are swapped by JS based on drawing mode -->
+    </div>
+
+    <script>
+    (function () {
+        const tb = document.getElementById('drawing-toolbar');
+        const bodyEl = document.body;
+        let activePreview = null;
+        let polygonState = null;     // { points, markers, polyPreview }
+        let circleState = null;      // { center, radius, layer, marker }
+        let pendingInclusion = true; // shared between circle/polygon while drawing
+
+        function showToolbar(html) {
+            tb.innerHTML = html;
+            tb.classList.add('visible');
+            tb.setAttribute('aria-hidden', 'false');
+            bodyEl.id = 'map-cursor-crosshair';
+        }
+        function hideToolbar() {
+            tb.classList.remove('visible');
+            tb.setAttribute('aria-hidden', 'true');
+            tb.innerHTML = '';
+            if (bodyEl.id === 'map-cursor-crosshair') bodyEl.id = '';
+        }
+
+        // -------- Inclusion / Exclusion toggle (shared markup) ----------
+        function inclusionToggleHtml(active) {
+            return `
+                <div class="toggle" id="dt-incl">
+                    <button data-val="include" class="${active ? 'on' : ''}">Include</button>
+                    <button data-val="exclude" class="${active ? '' : 'on'}">Exclude</button>
+                </div>`;
+        }
+        function wireInclusionToggle() {
+            const root = document.getElementById('dt-incl');
+            if (!root) return;
+            root.querySelectorAll('button').forEach(b => {
+                b.addEventListener('click', () => {
+                    pendingInclusion = b.dataset.val === 'include';
+                    root.querySelectorAll('button').forEach(x =>
+                        x.classList.toggle('on', x.dataset.val === b.dataset.val));
+                });
+            });
+        }
+
+        // ==============================================================
+        //   CIRCLE: click center → live-preview radius slider → confirm
+        // ==============================================================
+        window.startDrawGeofence = function (type) {
+            cancelDraw();   // make sure any previous mode is cleared
+            drawingMode = type;
+            pendingInclusion = true;
+
+            if (type === 'circle') {
+                showToolbar(`
+                    <div class="icon">&#9711;</div>
+                    <div class="label">
+                        <span class="title">Draw circle geofence</span>
+                        <span class="sub">Click the map to set center</span>
+                    </div>
+                    ${inclusionToggleHtml(true)}
+                    <button class="pill-btn danger" id="dt-cancel">Cancel</button>
+                `);
+                wireInclusionToggle();
+                document.getElementById('dt-cancel').onclick = cancelDraw;
+                map.once('click', onCircleCenter);
+            } else if (type === 'polygon') {
+                polygonState = { points: [], markers: [], poly: null };
+                renderPolygonToolbar();
+                map.on('click', onPolygonClick);
+            }
+        };
+
+        function onCircleCenter(e) {
+            if (drawingMode !== 'circle') return;
+            const center = e.latlng;
+            const initialRadius = 100;
+            const layer = L.circle(center, {
+                radius: initialRadius,
+                color: pendingInclusion ? '#5fd07c' : '#ef6f6f',
+                fillColor: pendingInclusion ? '#5fd07c' : '#ef6f6f',
+                fillOpacity: 0.10, weight: 2,
+            }).addTo(map);
+            activePreview = layer;
+            circleState = { center, radius: initialRadius, layer };
+
+            showToolbar(`
+                <div class="icon">&#9711;</div>
+                <div class="label">
+                    <span class="title">Adjust radius</span>
+                    <span class="sub">Drag slider, then Confirm</span>
+                </div>
+                <div class="slider-wrap">
+                    <input type="range" id="dt-radius" min="10" max="2000" step="5" value="${initialRadius}">
+                    <span class="val" id="dt-radius-val">${initialRadius} m</span>
+                </div>
+                ${inclusionToggleHtml(pendingInclusion)}
+                <button class="pill-btn" id="dt-cancel">Cancel</button>
+                <button class="pill-btn primary" id="dt-confirm">Confirm</button>
+            `);
+            wireInclusionToggle();
+            const slider = document.getElementById('dt-radius');
+            const valEl = document.getElementById('dt-radius-val');
+            slider.addEventListener('input', () => {
+                const r = parseFloat(slider.value);
+                circleState.radius = r;
+                circleState.layer.setRadius(r);
+                valEl.textContent = `${r} m`;
+                // Color follows the live inclusion toggle
+                circleState.layer.setStyle({
+                    color: pendingInclusion ? '#5fd07c' : '#ef6f6f',
+                    fillColor: pendingInclusion ? '#5fd07c' : '#ef6f6f',
+                });
+            });
+            // Re-paint when toggle changes too
+            document.getElementById('dt-incl').addEventListener('click', () => {
+                circleState.layer.setStyle({
+                    color: pendingInclusion ? '#5fd07c' : '#ef6f6f',
+                    fillColor: pendingInclusion ? '#5fd07c' : '#ef6f6f',
+                });
+            });
+            document.getElementById('dt-cancel').onclick = cancelDraw;
+            document.getElementById('dt-confirm').onclick = confirmCircle;
+        }
+
+        function confirmCircle() {
+            if (!circleState) return;
+            geofences.push({
+                type: 'circle',
+                center: { lat: circleState.center.lat, lon: circleState.center.lng },
+                radius: circleState.radius,
+                layer: circleState.layer,
+                inclusion: pendingInclusion,
+                enabled: true,
+            });
+            activePreview = null;
+            circleState = null;
+            drawingMode = null;
+            hideToolbar();
+            updateGeofenceList();
+            addLogEntry(`Geofence added: ${pendingInclusion ? 'inclusion' : 'exclusion'} circle`, 'info');
+        }
+
+        // ==============================================================
+        //   POLYGON: click to add vertices, finish button when ≥3
+        // ==============================================================
+        function renderPolygonToolbar() {
+            const n = polygonState ? polygonState.points.length : 0;
+            showToolbar(`
+                <div class="icon">&#11039;</div>
+                <div class="label">
+                    <span class="title">Draw polygon geofence</span>
+                    <span class="sub">Click map to add vertices (${n} added, need 3+)</span>
+                </div>
+                ${inclusionToggleHtml(pendingInclusion)}
+                <button class="pill-btn danger" id="dt-cancel">Cancel</button>
+                <button class="pill-btn primary" id="dt-finish" ${n < 3 ? 'disabled' : ''}>Finish</button>
+            `);
+            wireInclusionToggle();
+            document.getElementById('dt-cancel').onclick = cancelDraw;
+            document.getElementById('dt-finish').onclick = confirmPolygon;
+            // Repaint outline on inclusion toggle
+            document.getElementById('dt-incl').addEventListener('click', () => {
+                if (polygonState && polygonState.poly) {
+                    polygonState.poly.setStyle({
+                        color: pendingInclusion ? '#5fd07c' : '#ef6f6f',
+                        fillColor: pendingInclusion ? '#5fd07c' : '#ef6f6f',
+                    });
+                }
+            });
+        }
+
+        function onPolygonClick(e) {
+            if (drawingMode !== 'polygon' || !polygonState) return;
+            polygonState.points.push(e.latlng);
+            const m = L.circleMarker(e.latlng, {
+                radius: 6, color: '#7cc4ff', weight: 2,
+                fillColor: '#0c1018', fillOpacity: 1,
+            }).addTo(map);
+            polygonState.markers.push(m);
+
+            // Maintain a live preview polygon as soon as we have 3+ points
+            if (polygonState.points.length >= 3) {
+                if (polygonState.poly) map.removeLayer(polygonState.poly);
+                polygonState.poly = L.polygon(polygonState.points, {
+                    color: pendingInclusion ? '#5fd07c' : '#ef6f6f',
+                    fillColor: pendingInclusion ? '#5fd07c' : '#ef6f6f',
+                    fillOpacity: 0.10, weight: 2,
+                }).addTo(map);
+            }
+            renderPolygonToolbar();
+        }
+
+        function confirmPolygon() {
+            if (!polygonState || polygonState.points.length < 3) return;
+            polygonState.markers.forEach(m => map.removeLayer(m));
+            // The live preview polygon becomes the persisted one.
+            const layer = polygonState.poly || L.polygon(polygonState.points, {
+                color: pendingInclusion ? '#5fd07c' : '#ef6f6f',
+                fillColor: pendingInclusion ? '#5fd07c' : '#ef6f6f',
+                fillOpacity: 0.10, weight: 2,
+            }).addTo(map);
+            geofences.push({
+                type: 'polygon',
+                vertices: polygonState.points.map(p => ({ lat: p.lat, lon: p.lng })),
+                layer: layer,
+                inclusion: pendingInclusion,
+                enabled: true,
+            });
+            map.off('click', onPolygonClick);
+            polygonState = null;
+            drawingMode = null;
+            hideToolbar();
+            updateGeofenceList();
+            addLogEntry(`Geofence added: ${pendingInclusion ? 'inclusion' : 'exclusion'} polygon`, 'info');
+        }
+
+        // -------- Cancel handler — cleans up any in-progress draw ------
+        function cancelDraw() {
+            if (circleState && circleState.layer) {
+                map.removeLayer(circleState.layer);
+                circleState = null;
+            }
+            if (polygonState) {
+                polygonState.markers.forEach(m => map.removeLayer(m));
+                if (polygonState.poly) map.removeLayer(polygonState.poly);
+                polygonState = null;
+                map.off('click', onPolygonClick);
+            }
+            map.off('click', onCircleCenter);
+            drawingMode = null;
+            hideToolbar();
+        }
+        window.__cancelDrawingMode = cancelDraw;   // expose for ESC binding
+
+        // ESC cancels drawing
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && drawingMode) cancelDraw();
+        });
+
+        // -------- Modernised waypoint list: inline altitude editor -----
+        // The dashboard's updateWaypointList() builds rows; we hook
+        // post-render to wire up inline altitude editors.
+        const _origUpdateWP = window.updateWaypointList;
+        window.updateWaypointList = function () {
+            _origUpdateWP();
+            const list = document.getElementById('waypoint-list');
+            if (!list) return;
+            list.querySelectorAll('.waypoint-item').forEach((row, i) => {
+                const altEl = row.querySelector('.waypoint-alt');
+                if (!altEl || altEl.dataset.modernised === '1') return;
+                altEl.dataset.modernised = '1';
+                const wp = currentMission.waypoints[i];
+                altEl.innerHTML = `Alt: <input type="number" class="wp-alt-input" min="0" max="500" step="1" value="${(wp.alt || 50)}"> m`;
+                const input = altEl.querySelector('.wp-alt-input');
+                input.addEventListener('change', () => {
+                    const v = parseFloat(input.value);
+                    if (!isNaN(v)) {
+                        currentMission.waypoints[i].alt = v;
+                        addLogEntry(`Waypoint ${i+1} altitude set to ${v}m`, 'info');
+                    }
+                });
+                input.addEventListener('click', (e) => e.stopPropagation());
+            });
+        };
+
+        // -------- Modernised geofence list: inclusion / exclusion ------
+        const _origUpdateGF = window.updateGeofenceList;
+        window.updateGeofenceList = function () {
+            _origUpdateGF();
+            const list = document.getElementById('geofence-list');
+            if (!list) return;
+            list.querySelectorAll('.geofence-item').forEach((row, i) => {
+                if (row.dataset.modernised === '1') return;
+                row.dataset.modernised = '1';
+                const gf = geofences[i];
+                const name = row.querySelector('.geofence-name');
+                if (!name) return;
+                // Inject inclusion/exclusion toggle before the name
+                const toggle = document.createElement('span');
+                toggle.className = 'gf-incl-toggle';
+                toggle.innerHTML = `
+                    <button data-val="include" class="${gf.inclusion ? 'on include' : ''}">IN</button>
+                    <button data-val="exclude" class="${gf.inclusion ? '' : 'on exclude'}">OUT</button>
+                `;
+                name.parentNode.insertBefore(toggle, name);
+                toggle.querySelectorAll('button').forEach(btn => {
+                    btn.addEventListener('click', (ev) => {
+                        ev.stopPropagation();
+                        const wantInclude = btn.dataset.val === 'include';
+                        gf.inclusion = wantInclude;
+                        gf.layer.setStyle({
+                            color: wantInclude ? '#5fd07c' : '#ef6f6f',
+                            fillColor: wantInclude ? '#5fd07c' : '#ef6f6f',
+                        });
+                        // Recolor + re-render to refresh button .on classes
+                        row.dataset.modernised = '';
+                        updateGeofenceList();
+                    });
+                });
+                name.textContent = `${gf.inclusion ? 'Include' : 'Exclude'} ${gf.type} ${i + 1}`;
+            });
+        };
+    })();
     </script>
 
     <!-- ============================================================
