@@ -184,9 +184,24 @@ def register_advanced_routes(
 
     @app.route("/api/dock/status", methods=["GET"])
     def dock_status():
+        # Polled every 2s by the dashboard — return 200 with a stable
+        # "not_configured" payload so the browser console doesn't fill
+        # with 503s before the operator clicks Setup Dock.
         if store.dock is None:
-            return jsonify({"detail": "no dock configured"}), 503
+            return jsonify({
+                "state": "not_configured",
+                "battery_pct": 0.0,
+                "is_charging": False,
+                "drone_at_dock": False,
+                "deployments": 0,
+                "recalls": 0,
+                "auto_recall_armed": False,
+                "elapsed_in_state_s": 0.0,
+                "last_event_at": 0.0,
+                "configured": False,
+            })
         out = store.dock.status().to_dict()
+        out["configured"] = True
         if store.adapter is not None:
             out["adapter"] = {
                 "deployments": store.adapter.deployments,

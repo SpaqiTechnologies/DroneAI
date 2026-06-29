@@ -244,6 +244,23 @@ def create_drone():
     return drone
 
 
+def _json_safe(value):
+    """Recursively replace NaN/Inf floats with None so the payload survives
+    JSON.parse on the browser. Without this, e.g. lidar.nearest_obstacle =
+    float('inf') becomes the literal `Infinity` token that breaks
+    socket.io packet parsing on the client (silent disconnect)."""
+    import math
+    if isinstance(value, float):
+        if math.isnan(value) or math.isinf(value):
+            return None
+        return value
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return value
+
+
 def get_drone_state():
     """Get current drone state as dictionary."""
     drone = simulation['drone']
@@ -283,7 +300,7 @@ def get_drone_state():
                 'total_waypoints': mission_status.get('total_waypoints', 0),
             }
 
-    return {
+    return _json_safe({
         'position': {
             'lat': drone.current_position[0],
             'lon': drone.current_position[1],
@@ -324,7 +341,7 @@ def get_drone_state():
         'is_landing': drone.is_landing,
         'mission': mission_progress,
         'timestamp': time.time(),
-    }
+    })
 
 
 def simulation_loop():
