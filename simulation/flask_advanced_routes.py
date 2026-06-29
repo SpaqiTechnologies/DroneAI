@@ -597,6 +597,65 @@ def register_advanced_routes(
             "history_count": len(bridge.history) if bridge else 0,
         })
 
+    # ============================ Media snapshot / recording ================
+
+    @app.route("/api/media/snapshot", methods=["POST"])
+    def media_snapshot():
+        drone = get_drone()
+        if drone is None:
+            return jsonify({"detail": "drone not initialized"}), 503
+        storage = _ensure_media_storage(drone)
+        try:
+            drone.camera_sensor.start()
+        except Exception:
+            pass
+        ok, msg = drone.take_snapshot()
+        arts = storage.list_artifacts(kind="photo") if storage else []
+        latest = arts[-1].to_dict() if arts else None
+        return jsonify({"success": ok, "message": msg, "artifact": latest})
+
+    @app.route("/api/media/recording/start", methods=["POST"])
+    def media_recording_start():
+        drone = get_drone()
+        if drone is None:
+            return jsonify({"detail": "drone not initialized"}), 503
+        _ensure_media_storage(drone)
+        try:
+            drone.camera_sensor.start()
+            drone.camera_sensor.start_streaming()
+        except Exception:
+            pass
+        ok, msg = drone.start_recording()
+        return jsonify({"success": ok, "message": msg})
+
+    @app.route("/api/media/recording/stop", methods=["POST"])
+    def media_recording_stop():
+        drone = get_drone()
+        if drone is None:
+            return jsonify({"detail": "drone not initialized"}), 503
+        ok, msg = drone.stop_recording()
+        summary = drone.camera_sensor.get_last_recording_summary()
+        try:
+            drone.camera_sensor.stop_streaming()
+        except Exception:
+            pass
+        return jsonify({"success": ok, "message": msg, "summary": summary})
+
+    @app.route("/api/media", methods=["GET"])
+    def media_list():
+        drone = get_drone()
+        if drone is None:
+            return jsonify({"detail": "drone not initialized"}), 503
+        storage = _ensure_media_storage(drone)
+        if storage is None:
+            return jsonify({"photos": [], "videos": []})
+        return jsonify({
+            "photos": [a.to_dict() for a in storage.list_artifacts(kind="photo")],
+            "videos": [a.to_dict() for a in storage.list_artifacts(kind="video")],
+            "total_bytes": storage.total_bytes(),
+            "root": storage.root,
+        })
+
     # ============================ Live PNG frame ============================
 
     @app.route("/api/media/latest.png", methods=["GET"])
