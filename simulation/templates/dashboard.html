@@ -3931,55 +3931,57 @@
             }
         }, 1000);
 
+        // Track the Start button's idle label so we can restore it after
+        // the simulation actually starts (or fails to).
+        const _btnStartLabel = (document.getElementById('btn-start') || {}).textContent || 'Start';
+
         function startSimulation() {
             const speed = document.getElementById('speed-slider').value;
             const scenario = document.getElementById('scenario-select').value;
             const btn = document.getElementById('btn-start');
 
-            // Immediate visible feedback so the user knows the click registered.
-            const original = btn.textContent;
+            // Immediate visible feedback. The existing socket.on('simulation_started')
+            // handler will re-disable the button and the simulation_stopped /
+            // already-running paths below will restore the label.
             btn.disabled = true;
             btn.textContent = 'Starting…';
-
-            // Recover the button if the server doesn't respond in 3s (e.g.
-            // socket disconnected, page loaded before server was up).
-            const fallback = setTimeout(() => {
-                btn.disabled = false;
-                btn.textContent = original;
-                addLogEntry('Start timed out — server did not respond. ' +
-                    'Check that the server is running, or hit Stop and try again.', 'error');
-            }, 3000);
-
-            // Watch for the success/error events and clear the fallback.
-            const onStarted = () => { clearTimeout(fallback); cleanup(); };
-            const onErr = (data) => {
-                clearTimeout(fallback);
-                const msg = (data && data.message) || 'unknown error';
-                // If the server says the sim is already running, sync the UI
-                // to match reality instead of leaving the user confused.
-                if (/already running/i.test(msg)) {
-                    btn.disabled = true;
-                    btn.textContent = original;
-                    document.getElementById('btn-stop').disabled = false;
-                    addLogEntry('Simulation was already running — synced UI. Hit Stop to reset.', 'warning');
-                } else {
-                    btn.disabled = false;
-                    btn.textContent = original;
-                    addLogEntry('Start failed: ' + msg, 'error');
-                }
-                cleanup();
-            };
-            const cleanup = () => {
-                socket.off('simulation_started', onStarted);
-                socket.off('error', onErr);
-            };
-            socket.once('simulation_started', onStarted);
-            socket.once('error', onErr);
 
             socket.emit('start_simulation', {speed: parseFloat(speed), scenario: scenario});
             pathCoordinates = [];
             if (flightPath) { map.removeLayer(flightPath); flightPath = null; }
+            addLogEntry(`Starting simulation (${scenario}, ${speed}x)…`, 'info');
         }
+
+        // Reset the Start button label whenever the server reports the sim
+        // is stopped — fixes the case where the button stays stuck on "Starting…"
+        // after a failed start.
+        socket.on('simulation_stopped', () => {
+            const sb = document.getElementById('btn-start');
+            if (sb) sb.textContent = _btnStartLabel;
+        });
+
+        // Reset the label as soon as simulation_started lands too (existing
+        // handler at line ~3748 disables the button; we keep that, just put
+        // the text back to its idle label so the next click reads right).
+        socket.on('simulation_started', () => {
+            const sb = document.getElementById('btn-start');
+            if (sb) sb.textContent = _btnStartLabel;
+        });
+
+        // Catch the "already running" error specifically and sync the UI.
+        // Other socket errors are handled by the existing socket.on('error') above.
+        socket.on('error', (data) => {
+            const msg = (data && data.message) || '';
+            if (/start_simulation|already running/i.test(msg)) {
+                const sb = document.getElementById('btn-start');
+                const stb = document.getElementById('btn-stop');
+                if (sb) { sb.disabled = true; sb.textContent = _btnStartLabel; }
+                if (stb) stb.disabled = false;
+            } else if (/Failed to create drone/i.test(msg)) {
+                const sb = document.getElementById('btn-start');
+                if (sb) { sb.disabled = false; sb.textContent = _btnStartLabel; }
+            }
+        });
 
         // Sync button state from the server on page load. If a previous
         // session left the simulation running, the dashboard now shows
