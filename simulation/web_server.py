@@ -157,10 +157,10 @@ def create_drone():
         raise
 
     try:
-        # Set initial positions (Berlin area) - drone starts at home
-        drone.set_home_position(52.5200, 13.4050)
-        drone.set_current_position(52.5200, 13.4050)  # Start at home to avoid geofence breach
-        drone.gps_sensor.set_position(52.5200, 13.4050, 50.0)
+        # Set initial positions (Gjakova, Kosovo) - drone starts at home
+        drone.set_home_position(42.3803, 20.4308)
+        drone.set_current_position(42.3803, 20.4308)  # Start at home to avoid geofence breach
+        drone.gps_sensor.set_position(42.3803, 20.4308, 50.0)
         drone.gps_sensor.set_speed(0.0)
         drone.gps_sensor.set_heading(180.0)
         # Lock in a strong GPS fix so pre-arm checks pass deterministically.
@@ -1483,13 +1483,53 @@ def handle_generate_survey(data):
 
 @socketio.on('upload_mission')
 def handle_upload_mission(data=None):
-    """Upload mission to drone for execution."""
+    """Upload mission to drone for execution.
+
+    Accepts ``data['waypoints']`` (list of {latitude, longitude, altitude,
+    waypoint_type?, sequence?}) and rebuilds ``current_mission`` from
+    that payload. The dashboard's map-click adds waypoints to a local
+    JS array only; this lets one round-trip ship them all to the server.
+
+    Falls back to whatever ``current_mission`` already holds if the
+    payload is empty (preserves the older create_mission/add_waypoint
+    socket flow used by mission_planner.js + tests).
+    """
     global current_mission
 
     drone = simulation['drone']
     if not drone:
         emit('error', {'message': 'No drone initialized'})
         return
+
+    # If the client sent waypoints inline, materialise a fresh mission
+    # from them. Same logic as add_waypoint but in bulk.
+    if data and isinstance(data.get('waypoints'), list) and data['waypoints']:
+        wps_in = data['waypoints']
+        if current_mission is None:
+            current_mission = Mission(
+                name=data.get('name', 'Mission'),
+                mission_type=MissionType.WAYPOINT,
+            )
+        # Replace existing waypoints so re-Upload after edit works.
+        current_mission.waypoints = []
+        for i, wp in enumerate(wps_in):
+            try:
+                wt = wp.get('waypoint_type', 'NAVIGATE')
+                if isinstance(wt, str):
+                    wt = WaypointType(wt.lower() if wt.islower() else wt.lower())
+            except Exception:
+                wt = WaypointType.NAVIGATE
+            current_mission.waypoints.append(Waypoint(
+                latitude=float(wp.get('latitude', wp.get('lat', 0.0))),
+                longitude=float(wp.get('longitude', wp.get('lon', 0.0))),
+                altitude=float(wp.get('altitude', wp.get('alt', current_mission.default_altitude))),
+                sequence=int(wp.get('sequence', i)),
+                name=wp.get('name', f'WP{i+1}'),
+                waypoint_type=wt,
+                speed=float(wp.get('speed', current_mission.default_speed)),
+                hold_time=float(wp.get('hold_time', 0.0)),
+                acceptance_radius=float(wp.get('acceptance_radius', wp.get('radius', 2.0))),
+            ))
 
     if not current_mission:
         emit('error', {'message': 'No mission created'})
