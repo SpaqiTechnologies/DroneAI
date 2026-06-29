@@ -163,6 +163,13 @@ def create_drone():
         drone.gps_sensor.set_position(52.5200, 13.4050, 50.0)
         drone.gps_sensor.set_speed(0.0)
         drone.gps_sensor.set_heading(180.0)
+        # Lock in a strong GPS fix so pre-arm checks pass deterministically.
+        # The default _simulate_gps_behavior() dithers satellites 5-12 which
+        # randomly fails pre-arm GPS checks (saw "5 satellites, fix" rejects).
+        drone.gps_sensor.set_satellites(10)
+        drone.gps_sensor.set_fix_type(drone.gps_sensor.FIX_3D)
+        drone.gps_sensor.set_accuracy(3.0)
+        drone.gps_sensor.set_signal_quality(1.0)
         print("[create_drone] Positions set", flush=True)
     except Exception as e:
         print(f"[create_drone] ERROR setting positions: {e}", flush=True)
@@ -356,6 +363,25 @@ def simulation_loop():
     waypoints = []
     current_waypoint_idx = 0
 
+    def _active_mission_target():
+        """Return the (lat, lon, alt) the drone should be flying toward
+        right now, or None if there's no active mission target."""
+        try:
+            from core.flight_modes import FlightMode
+            ah = drone.flight_controller._mode_handlers.get(FlightMode.AUTO)
+            if ah is None:
+                return None
+            wp = ah.get_current_waypoint()
+            if wp is None:
+                return None
+            # auto_mode tracks RUNNING / PAUSED / COMPLETE
+            state = getattr(ah, '_mission_state', None)
+            if state is None or getattr(state, 'value', state) != 'running':
+                return None
+            return (wp.latitude, wp.longitude, wp.altitude, ah, wp)
+        except Exception:
+            return None
+
     while simulation['running']:
         speed = simulation['speed']
         scenario = simulation['scenario']
@@ -376,8 +402,67 @@ def simulation_loop():
         drone.battery_sensor.battery_level = max(0, drone.battery_sensor.battery_level - battery_drain_rate * update_interval * speed)
         drone.battery_level = drone.battery_sensor.battery_level
 
-        # Simulate movement if flying
-        if drone.is_flying and waypoints and current_waypoint_idx < len(waypoints):
+        # Simulate movement if flying. The active mission (auto handler)
+        # gets priority — if a mission is running, we fly to its current
+        # waypoint. Otherwise fall back to the legacy `waypoints` list
+        # used by the RTH path.
+        mission_target = _active_mission_target() if drone.is_flying else None
+
+        if mission_target is not None:
+            target_lat, target_lon, target_alt, auto_handler, wp_obj = mission_target
+            current_lat, current_lon = drone.current_position
+            current_alt = drone.current_altitude
+
+            move_speed = 0.0001 * speed  # ~11 m/update at 10 Hz
+
+            dlat = target_lat - current_lat
+            dlon = target_lon - current_lon
+            dist = (dlat**2 + dlon**2)**0.5
+
+            # Climb to waypoint altitude (1 m/update so it ramps quickly)
+            if abs(current_alt - target_alt) > 0.5:
+                step = 1.0 * speed
+                current_alt += step if target_alt > current_alt else -step
+                drone.current_altitude = current_alt
+
+            if dist < move_speed * 1.5:
+                # Reached this waypoint — advance via the auto handler
+                drone.set_current_position(target_lat, target_lon)
+                drone.gps_sensor.set_position(target_lat, target_lon, current_alt)
+                try:
+                    auto_handler._current_waypoint_index += 1
+                    auto_handler._waypoints_completed += 1
+                    socketio.emit('waypoint_reached', {
+                        'index': auto_handler._current_waypoint_index,
+                        'position': {'lat': target_lat, 'lon': target_lon},
+                        'remaining': len(auto_handler._mission.waypoints) - auto_handler._current_waypoint_index,
+                    })
+                    # If that was the last waypoint, mark mission complete + land
+                    if auto_handler._current_waypoint_index >= len(auto_handler._mission.waypoints):
+                        from core.mission.mission import MissionState
+                        auto_handler._mission_state = MissionState.COMPLETED
+                        if auto_handler._mission:
+                            auto_handler._mission.state = MissionState.COMPLETED
+                        drone._is_flying = False
+                        socketio.emit('mission_completed', {
+                            'mission_id': auto_handler._mission.id if auto_handler._mission else None,
+                        })
+                except Exception:
+                    pass
+            else:
+                # Move toward the current waypoint
+                new_lat = current_lat + (dlat / dist) * move_speed
+                new_lon = current_lon + (dlon / dist) * move_speed
+                drone.set_current_position(new_lat, new_lon)
+                drone.gps_sensor.set_position(new_lat, new_lon, current_alt)
+                import math
+                heading = math.degrees(math.atan2(dlon, dlat))
+                if heading < 0:
+                    heading += 360
+                drone.gps_sensor.set_heading(heading)
+                drone.gps_sensor.set_speed(12.0 * speed)
+
+        elif drone.is_flying and waypoints and current_waypoint_idx < len(waypoints):
             target = waypoints[current_waypoint_idx]
             current_lat, current_lon = drone.current_position
 
@@ -417,6 +502,22 @@ def simulation_loop():
 
         # Update navigation sensors
         try:
+            # GPS update — needed so gps_sensor.is_valid() returns True, which
+            # the AUTO flight mode requires before it will accept start_mission.
+            # In sim mode we also hold satellite count + 3D fix steady, since
+            # the default _simulate_gps_behavior() random-walks satellites
+            # 0..12 and would otherwise drop pre-arm checks at random.
+            if scenario != 'gps_loss':
+                drone.gps_sensor.set_satellites(10)
+                drone.gps_sensor.set_fix_type(drone.gps_sensor.FIX_3D)
+                drone.gps_sensor.set_accuracy(3.0)
+            drone.gps_sensor.update()
+            # Re-stabilise after update — the update may run the dither again
+            if scenario != 'gps_loss':
+                drone.gps_sensor.set_satellites(10)
+                drone.gps_sensor.set_fix_type(drone.gps_sensor.FIX_3D)
+                drone.gps_sensor.set_accuracy(3.0)
+
             # Update LiDAR
             if drone.lidar_sensor._is_connected:
                 lidar_reading = drone.lidar_sensor.update()
@@ -1428,14 +1529,31 @@ def handle_start_mission(data=None):
 
     if hasattr(drone, 'flight_controller'):
         from core.flight_modes import FlightMode
+        from core.mission.mission import MissionState
 
-        # Switch to AUTO mode
+        # Switch to AUTO mode. set_mode → _on_enter on the auto handler,
+        # which already transitions the mission state from READY → RUNNING
+        # by itself, so we DON'T also call auto_handler.start_mission() here
+        # (it rejects with "Mission not ready" because state is RUNNING).
         success, message = drone.flight_controller.set_mode(FlightMode.AUTO)
-
-        if success:
-            emit('mission_started', {'success': True, 'message': message})
-        else:
+        if not success:
             emit('error', {'message': message})
+            return
+
+        # Belt-and-braces: ensure state is RUNNING. Some _on_enter paths
+        # (e.g. mission already paused) need a manual nudge.
+        auto_handler = drone.flight_controller._mode_handlers.get(FlightMode.AUTO)
+        if auto_handler is not None:
+            if getattr(auto_handler, '_mission_state', None) == MissionState.READY:
+                auto_handler.start_mission()
+            elif getattr(auto_handler, '_mission_state', None) == MissionState.PAUSED:
+                auto_handler.resume_mission()
+
+        # Mark the sim drone as flying so simulation_loop drives it along
+        # the mission. In a real drone, takeoff would handle this.
+        drone._is_flying = True
+
+        emit('mission_started', {'success': True, 'message': message})
     else:
         emit('error', {'message': 'Flight controller not available'})
 

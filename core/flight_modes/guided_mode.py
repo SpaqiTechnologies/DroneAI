@@ -61,7 +61,7 @@ class GuidedModeHandler(FlightModeHandler):
         if not self._drone.gps_sensor.is_valid():
             return False, "GUIDED requires valid GPS fix"
 
-        if self._drone.gps_sensor.satellites < 4:
+        if self._drone.gps_sensor.get_satellites() < 4:
             return False, "GUIDED requires at least 4 satellites"
 
         # Require armed

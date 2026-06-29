@@ -190,7 +190,7 @@ class FlightModeHandler(ABC):
         if self.mode.requires_gps:
             if not self._drone.gps_sensor.is_valid():
                 return False, f"{self.mode.value} requires valid GPS"
-            if self._drone.gps_sensor.satellites < 4:
+            if self._drone.gps_sensor.get_satellites() < 4:
                 return False, f"{self.mode.value} requires at least 4 satellites"
 
         # Check armed requirement
