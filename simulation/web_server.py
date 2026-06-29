@@ -19,6 +19,7 @@ from core.failsafe import FailsafeAction
 from core.landing import LandingMode
 from core.arming import PreArmCheck
 from sensors.camera_sensor import VisionMode
+from core.flight_modes.base_mode import FlightMode
 
 # Mission planning imports
 from core.mission import (
@@ -270,7 +271,7 @@ def get_drone_state():
     # Get mission progress if available
     mission_progress = None
     if hasattr(drone, 'flight_controller'):
-        auto_handler = drone.flight_controller._mode_handlers.get('auto')
+        auto_handler = drone.flight_controller._mode_handlers.get(FlightMode.AUTO)
         if auto_handler:
             mission_status = auto_handler.get_status()
             mission_progress = {
@@ -1382,7 +1383,7 @@ def handle_upload_mission(data=None):
 
     # Load mission into flight controller auto mode
     if hasattr(drone, 'flight_controller'):
-        auto_handler = drone.flight_controller._mode_handlers.get('auto')
+        auto_handler = drone.flight_controller._mode_handlers.get(FlightMode.AUTO)
         if auto_handler:
             success, message = auto_handler.load_mission(current_mission)
             if success:
@@ -1431,7 +1432,7 @@ def handle_pause_mission(data=None):
         return
 
     if hasattr(drone, 'flight_controller'):
-        auto_handler = drone.flight_controller._mode_handlers.get('auto')
+        auto_handler = drone.flight_controller._mode_handlers.get(FlightMode.AUTO)
         if auto_handler:
             success, message = auto_handler.pause_mission()
             emit('mission_paused', {'success': success, 'message': message})
@@ -1450,7 +1451,7 @@ def handle_resume_mission(data=None):
         return
 
     if hasattr(drone, 'flight_controller'):
-        auto_handler = drone.flight_controller._mode_handlers.get('auto')
+        auto_handler = drone.flight_controller._mode_handlers.get(FlightMode.AUTO)
         if auto_handler:
             success, message = auto_handler.resume_mission()
             emit('mission_resumed', {'success': success, 'message': message})
@@ -1469,7 +1470,7 @@ def handle_abort_mission(data=None):
         return
 
     if hasattr(drone, 'flight_controller'):
-        auto_handler = drone.flight_controller._mode_handlers.get('auto')
+        auto_handler = drone.flight_controller._mode_handlers.get(FlightMode.AUTO)
         if auto_handler:
             success, message = auto_handler.abort_mission()
             # Switch to LOITER mode
@@ -1491,7 +1492,7 @@ def handle_skip_waypoint(data=None):
         return
 
     if hasattr(drone, 'flight_controller'):
-        auto_handler = drone.flight_controller._mode_handlers.get('auto')
+        auto_handler = drone.flight_controller._mode_handlers.get(FlightMode.AUTO)
         if auto_handler:
             success, message = auto_handler.skip_waypoint()
             emit('waypoint_skipped', {'success': success, 'message': message})
@@ -1512,7 +1513,7 @@ def handle_goto_waypoint(data):
     index = data.get('index', 0)
 
     if hasattr(drone, 'flight_controller'):
-        auto_handler = drone.flight_controller._mode_handlers.get('auto')
+        auto_handler = drone.flight_controller._mode_handlers.get(FlightMode.AUTO)
         if auto_handler:
             success, message = auto_handler.goto_waypoint(index)
             emit('waypoint_goto', {'success': success, 'message': message, 'index': index})
@@ -1531,7 +1532,7 @@ def handle_get_mission_progress(data=None):
         return
 
     if hasattr(drone, 'flight_controller'):
-        auto_handler = drone.flight_controller._mode_handlers.get('auto')
+        auto_handler = drone.flight_controller._mode_handlers.get(FlightMode.AUTO)
         if auto_handler:
             status = auto_handler.get_status()
             emit('mission_progress', {
