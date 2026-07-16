@@ -6,6 +6,10 @@
 [![python](https://img.shields.io/badge/python-3.13-blue)]()
 [![license](https://img.shields.io/badge/license-MIT-lightgrey)]()
 
+![DroneAI dashboard mid-flight](docs/screenshots/02_dashboard_flying.png)
+
+*The dashboard while a drone is flying an uploaded mission — real-time telemetry, map tracking, and mission control.*
+
 ---
 
 ## Quick start
@@ -27,8 +31,6 @@ python run_simulation.py
 
 → Open **http://localhost:5000** in your browser. The map opens centered on **Gjakova, Kosovo** (42.3803°N, 20.4308°E) — that's where the simulated drone spawns.
 
-📸 **Screenshots** of the dashboard at each stage of a flight live in [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md).
-
 ---
 
 ## How to run a simulation flight
@@ -46,6 +48,10 @@ You should see:
 - Green 🏠 home marker appears at the same spot
 - Telemetry overlay (right edge of map) starts ticking: altitude, battery, satellites
 - Wait ~2 seconds for the GPS lock — satellites should reach **10**
+
+![Dashboard just after boot on Gjakova](docs/screenshots/01_dashboard_idle.png)
+
+*Fresh dashboard, DISARMED, all telemetry fields waiting for data.*
 
 ### Step 2 — Add waypoints
 
@@ -94,6 +100,10 @@ You should see:
 - As each waypoint is reached: event log shows `Waypoint N reached`
 - After the last waypoint: `Mission completed`
 
+![Drone flying a 3-waypoint mission](docs/screenshots/02_dashboard_flying.png)
+
+*Mission in progress: ARMED, position 42.381 / 20.435, altitude 30 m, speed 60 m/s, heading 153°, 84% battery.*
+
 ### Common issues
 
 | Problem | Fix |
@@ -116,6 +126,12 @@ Click the **🛰 Advanced Ops** pill at the top-right of the page to open a side
 - **⚙ System** — anomaly history + inject-test button, event log
 
 The drawer lives on top of the existing dashboard — your map / mission / telemetry stay running underneath.
+
+![Advanced Ops drawer open on the Dock tab](docs/screenshots/03_advanced_ops_drawer.png)
+
+*Advanced Ops drawer overlaying the dashboard, on the Dock tab (drone-in-a-box + scheduled patrols).*
+
+Full-size versions of all screenshots live in **[docs/SCREENSHOTS.md](docs/SCREENSHOTS.md)**.
 
 ---
 
