@@ -27,6 +27,8 @@ python run_simulation.py
 
 → Open **http://localhost:5000** in your browser. The map opens centered on **Gjakova, Kosovo** (42.3803°N, 20.4308°E) — that's where the simulated drone spawns.
 
+📸 **Screenshots** of the dashboard at each stage of a flight live in [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md).
+
 ---
 
 ## How to run a simulation flight
